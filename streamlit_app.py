@@ -7,9 +7,9 @@ import pandas as pd
 import streamlit as st
 
 ###############################################################################
-# Streamlit – Marketing & Brand Analysis Tool                                #
+# Streamlit – Text Classification Tool                                #
 ###############################################################################
-st.set_page_config(page_title="Marketing & Brand Analysis Tool", layout="wide")
+st.set_page_config(page_title="Text Classification Tool", layout="wide")
 
 # Custom CSS for better styling
 st.markdown("""
@@ -58,7 +58,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Header
-st.markdown('<div class="main-header">📊 Marketing & Brand Analysis Tool</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">📊 Text Classification Tool</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">Upload your dataset and analyze text using customizable dictionaries</div>', unsafe_allow_html=True)
 
 ###############################################################################
