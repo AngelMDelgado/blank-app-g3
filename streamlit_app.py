@@ -7,10 +7,10 @@ import pandas as pd
 import streamlit as st
 
 ###############################################################################
-# Streamlit – Integrated Marketing & Brand Analysis Tool                     #
+# Streamlit – Text Classification Tool                     #
 ###############################################################################
 st.set_page_config(page_title="Marketing & Brand Analysis Tool", layout="wide")
-st.title("📈 Marketing & Brand Analysis Tool")
+st.title("📈 Text Classification Tool")
 st.markdown("*Analyze marketing keywords and brand language effectiveness*")
 
 # ---------------------------------------------------------------------------
