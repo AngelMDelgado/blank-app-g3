@@ -98,7 +98,10 @@ def main():
     # Edit existing categories
     for category in list(st.session_state.dictionaries.keys()):
         with st.sidebar.expander(f"✏️ Edit {category}"):
-            terms_text = '\n'.join(st.session_state.dictionaries[category])
+            # Ensure terms is a list for joining
+            current_terms = st.session_state.dictionaries[category]
+            terms_list = list(current_terms) if not isinstance(current_terms, list) else current_terms
+            terms_text = '\n'.join(terms_list)
             edited_terms = st.text_area(f"Terms for {category}", value=terms_text, key=f"edit_{category}")
             
             col1, col2 = st.columns(2)
@@ -204,11 +207,13 @@ def main():
         st.header("📋 Current Dictionaries")
         
         for category, terms in st.session_state.dictionaries.items():
-            with st.expander(f"{category} ({len(terms)} terms)"):
-                for term in terms[:10]:  # Show first 10 terms
+            # Ensure terms is a list
+            terms_list = list(terms) if not isinstance(terms, list) else terms
+            with st.expander(f"{category} ({len(terms_list)} terms)"):
+                for term in terms_list[:10]:  # Show first 10 terms
                     st.text(f"• {term}")
-                if len(terms) > 10:
-                    st.text(f"... and {len(terms) - 10} more")
+                if len(terms_list) > 10:
+                    st.text(f"... and {len(terms_list) - 10} more")
         
         # Export/Import dictionaries
         st.subheader("💾 Dictionary I/O")
