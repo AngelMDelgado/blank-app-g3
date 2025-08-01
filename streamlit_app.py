@@ -1,133 +1,110 @@
 import io
+from pathlib import Path
+from typing import Dict, Set, List
+
 import pandas as pd
 import streamlit as st
-import nltk
 
 ###############################################################################
-# 📄 Text Pre-processor for Classification                                    #
-# This app tokenizes text into sentences and creates a rolling context window.#
+# Streamlit – Marketing Keyword Classifier                                   #
 ###############################################################################
+st.set_page_config(page_title="Marketing Keyword Classifier", layout="wide")
+st.title("📈 Marketing Keyword Classifier")
 
-# --- NLTK Setup: Download the 'punkt' tokenizer if not present ---
-try:
-    nltk.data.find('tokenizers/punkt')
-except nltk.downloader.DownloadError:
-    st.spinner("Downloading language model for sentence tokenization...")
-    nltk.download('punkt')
-
-# --- Page Configuration ---
-st.set_page_config(page_title="Text Pre-processor", layout="wide")
-st.title("📄 Text Pre-processor for Classification")
-st.markdown("""
-This app pre-processes text for classification tasks.
-1.  **Sentence Tokenizer**: It breaks down text from a specified column into individual sentences. Each sentence becomes a 'Statement'.
-2.  **Rolling Context Window**: It creates a 'Context' for each statement, which includes the statement itself and a specified number of preceding sentences.
-""")
-
-# --- Sidebar: Upload & Configuration ---
+# ---------------------------------------------------------------------------
+# 🛠️ Sidebar – Upload & Configuration
+# ---------------------------------------------------------------------------
 with st.sidebar:
-    st.header("🗂️ 1. Upload Your Data")
-    uploaded_file = st.file_uploader(
-        "Upload a CSV file with a text column.",
-        type=["csv"]
-    )
+    st.header("🗂️ 1. Upload Your CSV")
+    uploaded_file = st.file_uploader("CSV file with a 'Statement' column", type=["csv"])
 
     st.markdown("---")
-    st.header("🔧 2. Configure Pre-processing")
+    st.header("🔧 2. Configure Dictionaries")
 
-    # User specifies the name of the column containing the text
-    input_col = st.text_input(
-        "Name of the column with text to process",
-        "text",
-        help="Enter the exact column name from your CSV that contains the social media posts or sales transcripts."
-    )
+    # Default marketing keyword dictionaries
+    default_dicts: Dict[str, Set[str]] = {
+        "urgency_marketing": {
+            "limited", "limited time", "limited run", "limited edition", "order now",
+            "last chance", "hurry", "while supplies last", "before they're gone",
+            "selling out", "selling fast", "act now", "don't wait", "today only",
+            "expires soon", "final hours", "almost gone",
+        },
+        "exclusive_marketing": {
+            "exclusive", "exclusively", "exclusive offer", "exclusive deal",
+            "members only", "vip", "special access", "invitation only",
+            "premium", "privileged", "limited access", "select customers",
+            "insider", "private sale", "early access",
+        },
+    }
 
-    # User specifies the size of the rolling context window
-    window_size = st.number_input(
-        "Context Window Size (preceding sentences)",
-        min_value=0,
-        max_value=20,
-        value=3,
-        help="The number of *previous* sentences to include in the context along with the current one. '0' means the context is just the statement itself."
-    )
+    # Load edited or new dictionaries into this object
+    current_dicts: Dict[str, Set[str]] = {}
 
-###############################################################################
-# Helper – Pre-processing Function
-###############################################################################
+    for label, keywords in default_dicts.items():
+        kw_text = "\n".join(sorted(keywords))
+        new_kw_text = st.text_area(
+            f"Keywords for **{label}** (one per line)", kw_text, key=label
+        )
+        kw_set = {kw.strip().lower() for kw in new_kw_text.split("\n") if kw.strip()}
+        if kw_set:
+            current_dicts[label] = kw_set
 
-def preprocess_text(df: pd.DataFrame, text_column: str, window: int) -> pd.DataFrame:
-    """
-    Tokenizes text in a column into sentences and creates a rolling context
-    window for each sentence.
-    """
-    processed_rows = []
+    # Section to add a completely new category
+    st.markdown("---")
+    st.subheader("➕ Add New Category")
+    new_label = st.text_input("New category name (alphanumeric and underscores)")
+    new_kw_input = st.text_area("Keywords for new category (one per line)")
+    if new_label and new_kw_input:
+        new_kw_set = {kw.strip().lower() for kw in new_kw_input.split("\n") if kw.strip()}
+        if new_kw_set:
+            current_dicts[new_label.strip().lower()] = new_kw_set
 
-    # Iterate over each row in the original dataframe
-    for index, row in df.iterrows():
-        # Ensure the value is a string
-        text = str(row.get(text_column, ''))
-        if not text.strip():
-            continue
-
-        # Tokenize the text into sentences
-        sentences = nltk.sent_tokenize(text)
-
-        # For each sentence, create a new row with its statement and context
-        for i, sentence in enumerate(sentences):
-            # Determine the start of the context window
-            start_index = max(0, i - window)
-            # Slice the list to get sentences for the context
-            context_sentences = sentences[start_index : i + 1]
-            # Join them into a single string
-            context = " ".join(context_sentences)
-
-            # Create a new dictionary for the row, preserving original data
-            new_row = row.to_dict()
-            new_row["Statement"] = sentence
-            new_row["Context"] = context
-            processed_rows.append(new_row)
-
-    if not processed_rows:
-        return pd.DataFrame(columns=list(df.columns) + ["Statement", "Context"])
-
-    # Create a new dataframe from the list of processed rows
-    result_df = pd.DataFrame(processed_rows)
-
-    # Optional: Remove the original, unprocessed text column to avoid redundancy
-    if text_column in result_df.columns:
-        result_df = result_df.drop(columns=[text_column])
-
-    return result_df
+    st.markdown("---")
+    one_hot = st.checkbox("Add one‑hot encoded columns", value=True)
 
 ###############################################################################
-# 🚀 Main – Run Pre-processing & Display Results
+# Helper – Classification Function
 ###############################################################################
 
-def run_preprocessor(file_buffer: io.BytesIO, text_col_name: str, window_sz: int):
-    """Main function to run the Streamlit app flow."""
+def classify_statement(text: str, dictionaries: Dict[str, Set[str]]) -> List[str]:
+    """Return list of dictionary names whose keywords appear in *text*."""
+    text_lower = text.lower()
+    matched: List[str] = []
+    for label, keywords in dictionaries.items():
+        if any(kw in text_lower for kw in keywords):
+            matched.append(label)
+    return matched
+
+###############################################################################
+# 🚀 Main – Run Classification & Display Results
+###############################################################################
+
+def run_classifier(file_buffer: io.BytesIO, dictionaries: Dict[str, Set[str]]):
     df = pd.read_csv(file_buffer)
 
-    if text_col_name not in df.columns:
-        st.error(f"❌ The uploaded CSV must contain a column named '{text_col_name}'.")
-        st.info(f"Available columns are: {', '.join(df.columns)}")
+    if "Statement" not in df.columns:
+        st.error("❌ The uploaded CSV must contain a column named 'Statement'.")
         return
 
-    # Pre-process the dataframe
-    with st.spinner("Pre-processing text... This may take a moment."):
-        processed_df = preprocess_text(df, text_column=text_col_name, window=window_sz)
+    # Classify
+    with st.spinner("Classifying statements…"):
+        df["labels"] = df["Statement"].astype(str).apply(classify_statement, dictionaries=dictionaries)
+        if one_hot:
+            for label in dictionaries:
+                df[label] = df["labels"].apply(lambda cats, lbl=label: lbl in cats)
 
-    st.success("✅ Pre-processing complete!")
+    st.success("✅ Classification complete!")
 
-    # Display a preview of the processed data
-    st.subheader("🔍 Preview of Processed Data")
-    st.dataframe(processed_df.head(20), use_container_width=True)
+    # Preview
+    st.subheader("🔍 Preview (first 10 rows)")
+    st.dataframe(df.head(10), use_container_width=True)
 
-    # Allow user to download the final CSV
-    csv_bytes = processed_df.to_csv(index=False).encode("utf-8")
+    # Download
+    csv_bytes = df.to_csv(index=False).encode("utf-8")
     st.download_button(
-        label="📥 Download Processed CSV",
+        label="Download classified CSV",
         data=csv_bytes,
-        file_name="preprocessed_output.csv",
+        file_name="classified_output.csv",
         mime="text/csv",
     )
 
@@ -135,12 +112,10 @@ def run_preprocessor(file_buffer: io.BytesIO, text_col_name: str, window_sz: int
 # 🏁 App Execution
 ###############################################################################
 if uploaded_file is not None:
-    if not input_col:
-        st.warning("Please enter the name of the column containing the text to process.")
-    else:
-        try:
-            run_preprocessor(uploaded_file, text_col_name=input_col, window_sz=window_size)
-        except Exception as e:
-            st.exception(e)
+    try:
+        run_classifier(uploaded_file, current_dicts)
+    except Exception as e:
+        st.exception(e)
 else:
-    st.info("👆 Upload a CSV file in the sidebar to get started.")
+    st.info("👆 Upload a CSV file to get started.")
+
