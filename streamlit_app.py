@@ -10,6 +10,8 @@ st.set_page_config(
     page_icon="🔍",
     layout="wide"
 )
+# Your main page content here
+st.title("🏠 Home - Dictionary Text Classifier")
 
 # Default dictionaries
 DEFAULT_DICTIONARIES = {
