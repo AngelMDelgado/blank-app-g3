@@ -79,7 +79,11 @@ def main():
     
     # Initialize session state for dictionaries
     if 'dictionaries' not in st.session_state:
-        st.session_state.dictionaries = DEFAULT_DICTIONARIES.copy()
+        # Ensure all dictionary values are lists (convert sets if needed)
+        clean_dicts = {}
+        for key, value in DEFAULT_DICTIONARIES.items():
+            clean_dicts[key] = list(value) if not isinstance(value, list) else value
+        st.session_state.dictionaries = clean_dicts
     
     # Dictionary editor
     st.sidebar.subheader("Edit Dictionaries")
@@ -120,7 +124,11 @@ def main():
     
     # Reset to defaults
     if st.sidebar.button("🔄 Reset to Defaults"):
-        st.session_state.dictionaries = DEFAULT_DICTIONARIES.copy()
+        # Ensure all values are lists when resetting
+        clean_dicts = {}
+        for key, value in DEFAULT_DICTIONARIES.items():
+            clean_dicts[key] = list(value) if not isinstance(value, list) else value
+        st.session_state.dictionaries = clean_dicts
         st.rerun()
     
     # Main content area
@@ -219,7 +227,12 @@ def main():
         st.subheader("💾 Dictionary I/O")
         
         # Export
-        dict_json = json.dumps(st.session_state.dictionaries, indent=2)
+        # Ensure all dictionary values are JSON serializable (lists, not sets)
+        serializable_dicts = {}
+        for key, value in st.session_state.dictionaries.items():
+            serializable_dicts[key] = list(value) if not isinstance(value, list) else value
+        
+        dict_json = json.dumps(serializable_dicts, indent=2)
         st.download_button(
             label="Export Dictionaries (JSON)",
             data=dict_json,
@@ -233,7 +246,11 @@ def main():
             try:
                 imported_dict = json.load(uploaded_dict)
                 if st.button("Load Imported Dictionaries"):
-                    st.session_state.dictionaries = imported_dict
+                    # Ensure imported dictionary values are lists
+                    clean_imported = {}
+                    for key, value in imported_dict.items():
+                        clean_imported[key] = list(value) if not isinstance(value, list) else value
+                    st.session_state.dictionaries = clean_imported
                     st.success("Dictionaries imported successfully!")
                     st.rerun()
             except Exception as e:
