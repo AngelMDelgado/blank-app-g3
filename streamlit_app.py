@@ -5,8 +5,6 @@ from typing import Dict, Set, List
 
 import pandas as pd
 import streamlit as st
-import plotly.express as px
-import plotly.graph_objects as go
 
 ###############################################################################
 # Streamlit – Integrated Marketing & Brand Analysis Tool                     #
@@ -229,45 +227,50 @@ def create_brand_visualizations(df_final, correlations):
     col1, col2 = st.columns(2)
     
     with col1:
-        # Distribution of match percentages
-        fig_hist = px.histogram(
-            df_final, 
-            x='match_pct', 
-            title='Distribution of Brand Keyword Match %',
-            nbins=20
-        )
-        fig_hist.update_layout(xaxis_title="Match Percentage", yaxis_title="Count")
-        st.plotly_chart(fig_hist, use_container_width=True)
+        # Distribution of match percentages using Streamlit histogram
+        st.subheader("📊 Distribution of Brand Match %")
+        st.histogram_chart(df_final['match_pct'])
     
     with col2:
         # Top posts by brand match percentage
-        top_posts = df_final.nlargest(10, 'match_pct')
-        fig_bar = px.bar(
-            top_posts, 
-            x='match_pct', 
-            y=top_posts.index,
-            orientation='h',
-            title='Top 10 Posts by Brand Match %'
-        )
-        fig_bar.update_layout(yaxis_title="Post Index", xaxis_title="Match Percentage")
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.subheader("🏆 Top 10 Posts by Brand Match %")
+        top_posts = df_final.nlargest(10, 'match_pct').reset_index()
+        
+        # Create a simple bar chart using streamlit
+        chart_data = pd.DataFrame({
+            'Post Index': [f"Post {i+1}" for i in range(len(top_posts))],
+            'Match %': top_posts['match_pct'].values
+        })
+        st.bar_chart(chart_data.set_index('Post Index'))
     
     # Correlation analysis if engagement data available
     if correlations:
         st.subheader("📊 Brand Language vs Engagement Correlations")
         
-        corr_df = pd.DataFrame(list(correlations.items()), columns=['Metric', 'Correlation'])
+        # Display correlations as metrics
+        cols = st.columns(len(correlations))
+        for i, (metric, corr) in enumerate(correlations.items()):
+            with cols[i % len(cols)]:
+                # Determine correlation strength
+                if abs(corr) > 0.7:
+                    strength = "Very Strong"
+                elif abs(corr) > 0.5:
+                    strength = "Strong"
+                elif abs(corr) > 0.3:
+                    strength = "Moderate"
+                else:
+                    strength = "Weak"
+                
+                st.metric(
+                    label=metric.replace('_', ' ').title(),
+                    value=f"{corr:.3f}",
+                    delta=f"{strength} correlation"
+                )
         
-        fig_corr = px.bar(
-            corr_df, 
-            x='Metric', 
-            y='Correlation',
-            title='Brand Language Correlation with Engagement Metrics',
-            color='Correlation',
-            color_continuous_scale='RdBu_r'
-        )
-        fig_corr.update_layout(xaxis_title="Engagement Metric", yaxis_title="Correlation")
-        st.plotly_chart(fig_corr, use_container_width=True)
+        # Create correlation bar chart
+        if len(correlations) > 1:
+            corr_df = pd.DataFrame(list(correlations.items()), columns=['Metric', 'Correlation'])
+            st.bar_chart(corr_df.set_index('Metric'))
 
 ###############################################################################
 # Main App Logic
