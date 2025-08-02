@@ -2,9 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import re
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import io
 import warnings
 warnings.filterwarnings('ignore')
@@ -137,84 +134,43 @@ def count_keyword_matches(caption, keywords, exact_match=True):
     return pd.Series([total_words, matched_count, matched_keywords])
 
 def create_visualizations(final_df, likes_corr, comments_corr):
-    """Create analysis visualizations using Plotly"""
-    # Create subplots
-    fig = make_subplots(
-        rows=2, cols=2,
-        subplot_titles=(
-            'Distribution of Personalized Language %',
-            f'Personalized Language % vs Likes (r={likes_corr:.3f})',
-            f'Personalized Language % vs Comments (r={comments_corr:.3f})',
-            f'Top {min(10, len(final_df))} Most Personalized Posts'
-        ),
-        specs=[[{"secondary_y": False}, {"secondary_y": False}],
-               [{"secondary_y": False}, {"secondary_y": False}]]
-    )
+    """Create analysis visualizations using Streamlit's built-in charts"""
     
-    # 1. Match percentage distribution
-    fig.add_trace(
-        go.Histogram(x=final_df['match_pct'], nbinsx=20, name='Distribution', 
-                    marker_color='skyblue', opacity=0.7),
-        row=1, col=1
-    )
+    col1, col2 = st.columns(2)
     
-    # 2. Scatter plot: Match % vs Likes
-    fig.add_trace(
-        go.Scatter(x=final_df['match_pct'], y=final_df['number_likes'], 
-                  mode='markers', name='Likes', marker=dict(color='coral', opacity=0.6)),
-        row=1, col=2
-    )
+    with col1:
+        st.subheader('Distribution of Personalized Language %')
+        # Create histogram data
+        hist_data = pd.cut(final_df['match_pct'], bins=20).value_counts().sort_index()
+        hist_df = pd.DataFrame({
+            'Range': [f"{interval.left:.3f}-{interval.right:.3f}" for interval in hist_data.index],
+            'Count': hist_data.values
+        })
+        st.bar_chart(hist_df.set_index('Range'))
+        
+        st.subheader(f'Match % vs Comments (r={comments_corr:.3f})')
+        chart_data = pd.DataFrame({
+            'Match Percentage': final_df['match_pct'],
+            'Comments': final_df['number_comments']
+        })
+        st.scatter_chart(chart_data, x='Match Percentage', y='Comments')
     
-    # Add trendline for likes
-    if len(final_df) > 1:
-        z = np.polyfit(final_df['match_pct'], final_df['number_likes'], 1)
-        p = np.poly1d(z)
-        x_trend = np.linspace(final_df['match_pct'].min(), final_df['match_pct'].max(), 100)
-        fig.add_trace(
-            go.Scatter(x=x_trend, y=p(x_trend), mode='lines', 
-                      name='Trend', line=dict(color='red', dash='dash')),
-            row=1, col=2
-        )
-    
-    # 3. Scatter plot: Match % vs Comments
-    fig.add_trace(
-        go.Scatter(x=final_df['match_pct'], y=final_df['number_comments'], 
-                  mode='markers', name='Comments', marker=dict(color='lightgreen', opacity=0.6)),
-        row=2, col=1
-    )
-    
-    # Add trendline for comments
-    if len(final_df) > 1:
-        z2 = np.polyfit(final_df['match_pct'], final_df['number_comments'], 1)
-        p2 = np.poly1d(z2)
-        fig.add_trace(
-            go.Scatter(x=x_trend, y=p2(x_trend), mode='lines', 
-                      name='Trend', line=dict(color='red', dash='dash')),
-            row=2, col=1
-        )
-    
-    # 4. Top performing posts by personalization
-    top_posts = final_df.nlargest(min(10, len(final_df)), 'match_pct')
-    if len(top_posts) > 0:
-        fig.add_trace(
-            go.Bar(y=list(range(len(top_posts))), x=top_posts['match_pct'], 
-                  orientation='h', name='Top Posts', marker_color='gold', opacity=0.7),
-            row=2, col=2
-        )
-    
-    # Update layout
-    fig.update_layout(height=800, showlegend=False, 
-                     title_text="Instagram Personalized Language Analysis")
-    fig.update_xaxes(title_text="Match Percentage", row=1, col=1)
-    fig.update_yaxes(title_text="Frequency", row=1, col=1)
-    fig.update_xaxes(title_text="Match Percentage", row=1, col=2)
-    fig.update_yaxes(title_text="Number of Likes", row=1, col=2)
-    fig.update_xaxes(title_text="Match Percentage", row=2, col=1)
-    fig.update_yaxes(title_text="Number of Comments", row=2, col=1)
-    fig.update_xaxes(title_text="Match Percentage", row=2, col=2)
-    fig.update_yaxes(title_text="Post Rank", row=2, col=2)
-    
-    return fig
+    with col2:
+        st.subheader(f'Match % vs Likes (r={likes_corr:.3f})')
+        chart_data = pd.DataFrame({
+            'Match Percentage': final_df['match_pct'],
+            'Likes': final_df['number_likes']
+        })
+        st.scatter_chart(chart_data, x='Match Percentage', y='Likes')
+        
+        st.subheader(f'Top {min(10, len(final_df))} Most Personalized Posts')
+        top_posts = final_df.nlargest(min(10, len(final_df)), 'match_pct')
+        if len(top_posts) > 0:
+            top_posts_chart = pd.DataFrame({
+                'Post Rank': [f"Post {i+1}" for i in range(len(top_posts))],
+                'Match %': top_posts['match_pct'].values
+            })
+            st.bar_chart(top_posts_chart.set_index('Post Rank'))
 
 def get_recommendation(likes_corr):
     """Get recommendation based on correlation"""
@@ -424,12 +380,17 @@ if st.session_state.analysis_complete and st.session_state.final_df is not None:
         likes_corr = final_df['match_pct'].corr(final_df['number_likes'])
         comments_corr = final_df['match_pct'].corr(final_df['number_comments'])
         
-        fig = create_visualizations(final_df, likes_corr, comments_corr)
-        st.plotly_chart(fig, use_container_width=True)
+        create_visualizations(final_df, likes_corr, comments_corr)
     else:
         # Simple histogram if no engagement data using Streamlit's built-in chart
         st.subheader("Distribution of Personalized Language %")
-        st.bar_chart(final_df['match_pct'].value_counts().sort_index())
+        # Create histogram data
+        hist_data = pd.cut(final_df['match_pct'], bins=20).value_counts().sort_index()
+        hist_df = pd.DataFrame({
+            'Range': [f"{interval.left:.3f}-{interval.right:.3f}" for interval in hist_data.index],
+            'Count': hist_data.values
+        })
+        st.bar_chart(hist_df.set_index('Range'))
     
     # Detailed results table
     st.subheader("📋 Detailed Results")
