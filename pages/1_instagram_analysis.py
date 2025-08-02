@@ -175,6 +175,15 @@ def create_visualizations(final_df, likes_corr, comments_corr):
     plt.tight_layout()
     return fig
 
+def get_recommendation(likes_corr):
+    """Get recommendation based on correlation"""
+    if likes_corr > 0.3:
+        return "Strong positive correlation - increase personalized language!"
+    elif likes_corr > 0.1:
+        return "Moderate correlation - consider A/B testing personalization strategies."
+    else:
+        return "Weak correlation - personalization may not drive engagement in this dataset."
+
 # Main app layout
 col1, col2 = st.columns([2, 1])
 
@@ -295,6 +304,10 @@ if uploaded_file1 is not None:
                 
                 st.success("🎉 Analysis completed!")
 
+    except Exception as e:
+        st.error(f"❌ Error loading data: {str(e)}")
+        st.stop()
+
 # Display results if analysis is complete
 if st.session_state.analysis_complete and st.session_state.final_df is not None:
     final_df = st.session_state.final_df
@@ -413,6 +426,9 @@ if st.session_state.analysis_complete and st.session_state.final_df is not None:
     with col2:
         # Summary report
         if 'number_likes' in final_df.columns:
+            likes_corr = final_df['match_pct'].corr(final_df['number_likes'])
+            recommendation = get_recommendation(likes_corr)
+            
             summary_text = f"""Instagram Personalized Language Analysis Summary
 {'='*50}
 Analysis Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -423,12 +439,10 @@ Posts with Personalized Language: {(final_df['match_pct'] > 0).sum()}
 Key Findings:
 • Average Personalization Rate: {final_df['match_pct'].mean():.1%}
 • Correlation with Likes: {likes_corr:.4f}
-• Correlation with Comments: {comments_corr:.4f}
+• Correlation with Comments: {final_df['match_pct'].corr(final_df['number_comments']):.4f}
 
 Recommendation:
-{'Strong positive correlation - increase personalized language!' if likes_corr > 0.3 else 
- 'Moderate correlation - consider A/B testing personalization strategies.' if likes_corr > 0.1 else
- 'Weak correlation - personalization may not drive engagement in this dataset.'}
+{recommendation}
 """
         else:
             summary_text = f"""Instagram Personalized Language Analysis Summary
