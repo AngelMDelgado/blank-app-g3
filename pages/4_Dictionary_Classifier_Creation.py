@@ -46,22 +46,6 @@ st.markdown("""
         border-radius: 0.5rem;
         margin: 0.5rem 0;
     }
-    .success-box {
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
-        color: #155724;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 1rem 0;
-    }
-    .warning-box {
-        background-color: #fff3cd;
-        border: 1px solid #ffeaa7;
-        color: #856404;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 1rem 0;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -332,94 +316,6 @@ class DictionaryClassifier:
         self.target_name = target
         
         return results
-    
-    def predict_engagement(self, text_samples, target='high_engagement'):
-        """Predict engagement for new text samples"""
-        if target not in self.models or self.best_model is None:
-            st.error(f"❌ No trained model available for target: {target}")
-            return None, None
-        
-        # Create features for new samples
-        predictions = []
-        
-        for text in text_samples:
-            # Create feature vector
-            words = re.findall(r'\b\w+\b', text.lower())
-            
-            features = {
-                'total_words': len(words),
-                'total_keywords': 0,
-                'keyword_density': 0,
-                'unique_keywords': 0
-            }
-            
-            # Individual keyword presence
-            matched_keywords = set()
-            for keyword in self.keywords:
-                if keyword in words:
-                    features[f'has_{keyword}'] = 1
-                    matched_keywords.add(keyword)
-                    features['total_keywords'] += words.count(keyword)
-                else:
-                    features[f'has_{keyword}'] = 0
-            
-            # Derived features
-            features['unique_keywords'] = len(matched_keywords)
-            features['keyword_density'] = features['total_keywords'] / len(words) if words else 0
-            
-            # Category features
-            emotion_keywords = ["amazing", "incredible", "fantastic", "wonderful", "beautiful", "stunning", "gorgeous"]
-            quality_keywords = ["premium", "luxury", "exclusive", "exceptional", "outstanding", "extraordinary"]
-            personal_keywords = ["personalized", "custom", "tailored", "bespoke", "individual", "personal"]
-            service_keywords = ["care", "thoughtful", "responsive", "concierge", "attentive", "dedicated"]
-            
-            features['emotion_score'] = sum(1 for kw in emotion_keywords if kw in matched_keywords)
-            features['quality_score'] = sum(1 for kw in quality_keywords if kw in matched_keywords)
-            features['personal_score'] = sum(1 for kw in personal_keywords if kw in matched_keywords)
-            features['service_score'] = sum(1 for kw in service_keywords if kw in matched_keywords)
-            
-            # Text features
-            features['has_exclamation'] = 1 if '!' in text else 0
-            features['has_question'] = 1 if '?' in text else 0
-            features['has_hashtag'] = 1 if '#' in text else 0
-            features['has_mention'] = 1 if '@' in text else 0
-            features['char_count'] = len(text)
-            features['sentence_count'] = len(re.split(r'[.!?]+', text))
-            
-            predictions.append(features)
-        
-        # Convert to DataFrame and align with training features
-        pred_df = pd.DataFrame(predictions)
-        
-        # Ensure all training features are present
-        for col in self.X_train.columns:
-            if col not in pred_df.columns:
-                pred_df[col] = 0
-        
-        # Reorder columns to match training data
-        pred_df = pred_df[self.X_train.columns]
-        
-        # Apply feature selection if used
-        if self.feature_selector is not None:
-            pred_df = pd.DataFrame(
-                self.feature_selector.transform(pred_df),
-                columns=self.X_train.columns[self.feature_selector.get_support()]
-            )
-        
-        # Scale if needed (for SVM/LogReg)
-        best_model_name = max(self.models[target].keys(), 
-                             key=lambda x: self.models[target][x]['cv_mean'])
-        
-        if best_model_name in ['SVM', 'Logistic Regression']:
-            pred_features = self.scaler.transform(pred_df)
-        else:
-            pred_features = pred_df
-        
-        # Make predictions
-        predictions = self.best_model.predict(pred_features)
-        probabilities = self.best_model.predict_proba(pred_features)[:, 1] if hasattr(self.best_model, 'predict_proba') else None
-        
-        return predictions, probabilities
 
 # Initialize session state
 if 'classifier' not in st.session_state:
@@ -430,31 +326,6 @@ if 'features_created' not in st.session_state:
     st.session_state.features_created = False
 if 'models_trained' not in st.session_state:
     st.session_state.models_trained = False
-
-# Main app
-def main():
-    st.markdown("<h1 class='main-header'>📊 Instagram Dictionary Classifier</h1>", unsafe_allow_html=True)
-    st.markdown("### Create ML models to predict Instagram engagement based on personalized language patterns")
-    
-    # Sidebar navigation
-    st.sidebar.title("🔧 Navigation")
-    page = st.sidebar.selectbox(
-        "Choose a section:",
-        ["📁 Data Upload", "🔧 Feature Engineering", "🤖 Model Training", "📊 Model Evaluation", "🔮 Predictions", "💾 Export Model"]
-    )
-    
-    if page == "📁 Data Upload":
-        data_upload_page()
-    elif page == "🔧 Feature Engineering":
-        feature_engineering_page()
-    elif page == "🤖 Model Training":
-        model_training_page()
-    elif page == "📊 Model Evaluation":
-        model_evaluation_page()
-    elif page == "🔮 Predictions":
-        predictions_page()
-    elif page == "💾 Export Model":
-        export_page()
 
 def data_upload_page():
     st.markdown("<h2 class='section-header'>📁 Data Upload</h2>", unsafe_allow_html=True)
@@ -615,408 +486,9 @@ def feature_engineering_page():
                     engagement_rate = (high_engagement_posts / total_posts) * 100
                     st.metric("High Engagement Rate", f"{engagement_rate:.1f}%")
                 
-                # Feature correlation analysis
-                st.subheader("🔍 Top Feature Correlations")
-                
-                correlations = []
-                for col in feature_matrix.columns[:20]:  # Top 20 features
-                    corr = feature_matrix[col].corr(st.session_state.classifier.df['high_engagement'])
-                    if not pd.isna(corr):
-                        correlations.append((col, abs(corr), corr))
-                
-                correlations.sort(key=lambda x: x[1], reverse=True)
-                
-                # Display top correlations
-                corr_df = pd.DataFrame(correlations[:10], columns=['Feature', 'Abs_Correlation', 'Correlation'])
-                st.dataframe(corr_df)
-                
                 st.success("🎉 Features created successfully! Go to Model Training.")
 
-def model_evaluation_page():
-    st.markdown("<h2 class='section-header'>📊 Model Evaluation</h2>", unsafe_allow_html=True)
-    
-    if not st.session_state.models_trained:
-        st.warning("⚠️ Please train models first in the Model Training section.")
-        return
-    
-    target = st.session_state.current_target
-    results = st.session_state.classifier.models[target]
-    
-    # Model selection for detailed analysis
-    model_names = list(results.keys())
-    selected_model = st.selectbox("Select model for detailed analysis:", model_names)
-    
-    if selected_model:
-        model_data = results[selected_model]
-        
-        # Performance metrics
-        st.subheader(f"📈 {selected_model} Performance")
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Test Accuracy", f"{model_data['accuracy']:.4f}")
-        
-        with col2:
-            st.metric("CV Accuracy", f"{model_data['cv_mean']:.4f}")
-        
-        with col3:
-            st.metric("CV Std Dev", f"{model_data['cv_std']:.4f}")
-        
-        with col4:
-            if model_data['auc_score']:
-                st.metric("AUC Score", f"{model_data['auc_score']:.4f}")
-            else:
-                st.metric("AUC Score", "N/A")
-        
-        # Confusion Matrix
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("🔄 Confusion Matrix")
-            cm = confusion_matrix(model_data['y_test'], model_data['y_pred'])
-            
-            fig, ax = plt.subplots(figsize=(8, 6))
-            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax)
-            ax.set_xlabel('Predicted')
-            ax.set_ylabel('Actual')
-            ax.set_title(f'Confusion Matrix - {selected_model}')
-            st.pyplot(fig)
-            plt.close()
-        
-        with col2:
-            st.subheader("📊 Classification Report")
-            report = classification_report(model_data['y_test'], model_data['y_pred'], output_dict=True)
-            report_df = pd.DataFrame(report).transpose()
-            st.dataframe(report_df.round(4))
-        
-        # ROC Curve (if probabilities available)
-        if model_data['y_prob'] is not None:
-            st.subheader("📈 ROC Curve")
-            fpr, tpr, _ = roc_curve(model_data['y_test'], model_data['y_prob'])
-            
-            fig, ax = plt.subplots(figsize=(8, 6))
-            ax.plot(fpr, tpr, label=f'{selected_model} (AUC = {model_data["auc_score"]:.4f})')
-            ax.plot([0, 1], [0, 1], 'k--', label='Random')
-            ax.set_xlabel('False Positive Rate')
-            ax.set_ylabel('True Positive Rate')
-            ax.set_title('ROC Curve')
-            ax.legend()
-            ax.grid(True)
-            st.pyplot(fig)
-            plt.close()
-        
-        # Feature Importance (for tree-based models)
-        if hasattr(model_data['model'], 'feature_importances_'):
-            st.subheader("🎯 Feature Importance")
-            
-            feature_names = st.session_state.classifier.X_train.columns
-            importances = model_data['model'].feature_importances_
-            
-            # Create feature importance dataframe
-            importance_df = pd.DataFrame({
-                'Feature': feature_names,
-                'Importance': importances
-            }).sort_values('Importance', ascending=False)
-            
-            # Plot top 15 features
-            fig, ax = plt.subplots(figsize=(10, 8))
-            top_features = importance_df.head(15)
-            sns.barplot(data=top_features, x='Importance', y='Feature', ax=ax)
-            ax.set_title(f'Top 15 Feature Importances - {selected_model}')
-            plt.tight_layout()
-            st.pyplot(fig)
-            plt.close()
-            
-            # Show feature importance table
-            st.dataframe(importance_df.head(20))
-
-def predictions_page():
-    st.markdown("<h2 class='section-header'>🔮 Predictions</h2>", unsafe_allow_html=True)
-    
-    if not st.session_state.models_trained:
-        st.warning("⚠️ Please train models first in the Model Training section.")
-        return
-    
-    st.markdown("### Test your model on new Instagram post text")
-    
-    # Single prediction
-    st.subheader("📝 Single Post Prediction")
-    
-    sample_text = st.text_area(
-        "Enter Instagram post text:",
-        height=150,
-        placeholder="Enter your Instagram post text here to predict its engagement potential..."
-    )
-    
-    if sample_text and st.button("🔍 Predict Engagement", type="primary"):
-        target = st.session_state.current_target
-        predictions, probabilities = st.session_state.classifier.predict_engagement([sample_text], target)
-        
-        if predictions is not None:
-            prediction = predictions[0]
-            probability = probabilities[0] if probabilities is not None else None
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                if target == 'engagement_category':
-                    categories = ['Low', 'Medium', 'High']
-                    result = categories[prediction]
-                    st.success(f"**Predicted Engagement Level: {result}**")
-                else:
-                    result = "High Engagement" if prediction == 1 else "Low Engagement"
-                    st.success(f"**Prediction: {result}**")
-            
-            with col2:
-                if probability is not None:
-                    confidence = probability if prediction == 1 else (1 - probability)
-                    st.info(f"**Confidence: {confidence:.2%}**")
-            
-            # Feature analysis
-            st.subheader("🔍 Text Analysis")
-            
-            # Extract features for analysis
-            text = sample_text.lower()
-            words = re.findall(r'\b\w+\b', text)
-            matched_keywords = [kw for kw in st.session_state.classifier.keywords if kw in words]
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.metric("Word Count", len(words))
-                st.metric("Character Count", len(sample_text))
-            
-            with col2:
-                st.metric("Keywords Found", len(matched_keywords))
-                keyword_density = len(matched_keywords) / len(words) if words else 0
-                st.metric("Keyword Density", f"{keyword_density:.3f}")
-            
-            with col3:
-                has_exclamation = "Yes" if "!" in sample_text else "No"
-                st.metric("Has Exclamation", has_exclamation)
-                has_hashtag = "Yes" if "#" in sample_text else "No"
-                st.metric("Has Hashtag", has_hashtag)
-            
-            if matched_keywords:
-                st.subheader("✅ Keywords Found")
-                st.write(", ".join(matched_keywords))
-    
-    # Batch prediction
-    st.subheader("📊 Batch Prediction")
-    st.markdown("Upload a CSV file with a 'text' column to predict engagement for multiple posts.")
-    
-    batch_file = st.file_uploader("Upload CSV for batch prediction", type=['csv'])
-    
-    if batch_file:
-        try:
-            batch_df = pd.read_csv(batch_file)
-            
-            if 'text' not in batch_df.columns:
-                st.error("❌ CSV must contain a 'text' column")
-            else:
-                st.success(f"✅ Loaded {len(batch_df)} posts for prediction")
-                st.dataframe(batch_df.head())
-                
-                if st.button("🚀 Run Batch Prediction"):
-                    with st.spinner("Making predictions..."):
-                        target = st.session_state.current_target
-                        predictions, probabilities = st.session_state.classifier.predict_engagement(
-                            batch_df['text'].tolist(), target
-                        )
-                        
-                        if predictions is not None:
-                            # Add predictions to dataframe
-                            if target == 'engagement_category':
-                                categories = ['Low', 'Medium', 'High']
-                                batch_df['predicted_engagement'] = [categories[p] for p in predictions]
-                            else:
-                                batch_df['predicted_engagement'] = ['High' if p == 1 else 'Low' for p in predictions]
-                            
-                            if probabilities is not None:
-                                batch_df['confidence'] = [p if pred == 1 else (1-p) for pred, p in zip(predictions, probabilities)]
-                            
-                            st.success("✅ Predictions completed!")
-                            st.dataframe(batch_df)
-                            
-                            # Download results
-                            csv = batch_df.to_csv(index=False)
-                            st.download_button(
-                                label="📥 Download Results",
-                                data=csv,
-                                file_name="engagement_predictions.csv",
-                                mime="text/csv"
-                            )
-                            
-                            # Summary statistics
-                            st.subheader("📈 Prediction Summary")
-                            
-                            if target == 'engagement_category':
-                                summary = batch_df['predicted_engagement'].value_counts()
-                            else:
-                                summary = batch_df['predicted_engagement'].value_counts()
-                            
-                            col1, col2 = st.columns(2)
-                            
-                            with col1:
-                                st.write("**Prediction Distribution:**")
-                                st.dataframe(summary)
-                            
-                            with col2:
-                                fig, ax = plt.subplots(figsize=(8, 6))
-                                summary.plot(kind='bar', ax=ax)
-                                ax.set_title('Prediction Distribution')
-                                ax.set_ylabel('Count')
-                                plt.xticks(rotation=45)
-                                plt.tight_layout()
-                                st.pyplot(fig)
-                                plt.close()
-                        
-        except Exception as e:
-            st.error(f"Error processing file: {str(e)}")
-
-def export_page():
-    st.markdown("<h2 class='section-header'>💾 Export Model</h2>", unsafe_allow_html=True)
-    
-    if not st.session_state.models_trained:
-        st.warning("⚠️ Please train models first in the Model Training section.")
-        return
-    
-    st.markdown("### Export your trained model and components")
-    
-    target = st.session_state.current_target
-    
-    # Model summary
-    st.subheader("📋 Model Summary")
-    
-    results = st.session_state.classifier.models[target]
-    best_model_name = max(results.keys(), key=lambda x: results[x]['cv_mean'])
-    best_model = results[best_model_name]
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.info(f"""
-        **Model Details:**
-        - Target Variable: {target}
-        - Best Model: {best_model_name}
-        - CV Accuracy: {best_model['cv_mean']:.4f}
-        - Test Accuracy: {best_model['accuracy']:.4f}
-        """)
-    
-    with col2:
-        st.info(f"""
-        **Data Details:**
-        - Training Posts: {len(st.session_state.classifier.X_train)}
-        - Features: {len(st.session_state.classifier.X_train.columns)}
-        - Keywords: {len(st.session_state.classifier.keywords)}
-        """)
-    
-    # Export options
-    st.subheader("📦 Export Options")
-    
-    if st.button("💾 Download Model Package", type="primary"):
-        # Create a dictionary with all necessary components
-        model_package = {
-            'best_model': st.session_state.classifier.best_model,
-            'scaler': st.session_state.classifier.scaler,
-            'feature_selector': st.session_state.classifier.feature_selector,
-            'keywords': st.session_state.classifier.keywords,
-            'feature_columns': st.session_state.classifier.X_train.columns.tolist(),
-            'target_name': target,
-            'model_name': best_model_name,
-            'performance_metrics': {
-                'cv_accuracy': best_model['cv_mean'],
-                'test_accuracy': best_model['accuracy'],
-                'auc_score': best_model['auc_score']
-            }
-        }
-        
-        # Serialize the model package
-        buffer = io.BytesIO()
-        pickle.dump(model_package, buffer)
-        buffer.seek(0)
-        
-        st.download_button(
-            label="📥 Download Model Package (.pkl)",
-            data=buffer.getvalue(),
-            file_name=f"instagram_classifier_{target}_{best_model_name.lower().replace(' ', '_')}.pkl",
-            mime="application/octet-stream"
-        )
-        
-        st.success("✅ Model package ready for download!")
-    
-    # Usage instructions
-    st.subheader("📖 Usage Instructions")
-    
-    st.markdown("""
-    ### How to use the exported model:
-    
-    ```python
-    import pickle
-    import pandas as pd
-    import numpy as np
-    import re
-    
-    # Load the model package
-    with open('your_model_file.pkl', 'rb') as f:
-        model_package = pickle.load(f)
-    
-    # Extract components
-    model = model_package['best_model']
-    scaler = model_package['scaler']
-    feature_selector = model_package['feature_selector']
-    keywords = model_package['keywords']
-    feature_columns = model_package['feature_columns']
-    
-    # Function to predict new text
-    def predict_engagement(text):
-        # Create features (same logic as in the app)
-        words = re.findall(r'\\b\\w+\\b', text.lower())
-        
-        # ... feature creation logic ...
-        # (Copy the feature creation code from the predict_engagement method)
-        
-        # Make prediction
-        prediction = model.predict(features)
-        probability = model.predict_proba(features)[:, 1]
-        
-        return prediction[0], probability[0]
-    
-    # Example usage
-    result = predict_engagement("Your Instagram post text here")
-    print(f"Prediction: {result[0]}, Confidence: {result[1]:.2%}")
-    ```
-    """)
-    
-    # Model comparison export
-    st.subheader("📊 Model Comparison Export")
-    
-    if st.button("📈 Export Model Comparison"):
-        comparison_data = []
-        
-        for name, metrics in results.items():
-            comparison_data.append({
-                'Model': name,
-                'CV_Accuracy': metrics['cv_mean'],
-                'CV_Std': metrics['cv_std'],
-                'Test_Accuracy': metrics['accuracy'],
-                'AUC_Score': metrics['auc_score'] if metrics['auc_score'] else 0
-            })
-        
-        comparison_df = pd.DataFrame(comparison_data)
-        csv = comparison_df.to_csv(index=False)
-        
-        st.download_button(
-            label="📥 Download Model Comparison (CSV)",
-            data=csv,
-            file_name=f"model_comparison_{target}.csv",
-            mime="text/csv"
-        )
-
-# Run the main app
-if __name__ == "__main__":
-    main()_training_page():
+def model_training_page():
     st.markdown("<h2 class='section-header'>🤖 Model Training</h2>", unsafe_allow_html=True)
     
     if not st.session_state.features_created:
@@ -1080,7 +552,57 @@ if __name__ == "__main__":
                 best_score = results[best_model_name]['cv_mean']
                 
                 st.success(f"🏆 Best Model: **{best_model_name}** (CV Score: {best_score:.4f})")
-                
-                st.info("Go to Model Evaluation to see detailed analysis and visualizations.")
 
-def model
+def model_evaluation_page():
+    st.markdown("<h2 class='section-header'>📊 Model Evaluation</h2>", unsafe_allow_html=True)
+    
+    if not st.session_state.models_trained:
+        st.warning("⚠️ Please train models first in the Model Training section.")
+        return
+    
+    st.write("Model evaluation features will be available here.")
+
+def predictions_page():
+    st.markdown("<h2 class='section-header'>🔮 Predictions</h2>", unsafe_allow_html=True)
+    
+    if not st.session_state.models_trained:
+        st.warning("⚠️ Please train models first in the Model Training section.")
+        return
+    
+    st.write("Prediction features will be available here.")
+
+def export_page():
+    st.markdown("<h2 class='section-header'>💾 Export Model</h2>", unsafe_allow_html=True)
+    
+    if not st.session_state.models_trained:
+        st.warning("⚠️ Please train models first in the Model Training section.")
+        return
+    
+    st.write("Model export features will be available here.")
+
+def main():
+    st.markdown("<h1 class='main-header'>📊 Instagram Dictionary Classifier</h1>", unsafe_allow_html=True)
+    st.markdown("### Create ML models to predict Instagram engagement based on personalized language patterns")
+    
+    # Sidebar navigation
+    st.sidebar.title("🔧 Navigation")
+    page = st.sidebar.selectbox(
+        "Choose a section:",
+        ["📁 Data Upload", "🔧 Feature Engineering", "🤖 Model Training", "📊 Model Evaluation", "🔮 Predictions", "💾 Export Model"]
+    )
+    
+    if page == "📁 Data Upload":
+        data_upload_page()
+    elif page == "🔧 Feature Engineering":
+        feature_engineering_page()
+    elif page == "🤖 Model Training":
+        model_training_page()
+    elif page == "📊 Model Evaluation":
+        model_evaluation_page()
+    elif page == "🔮 Predictions":
+        predictions_page()
+    elif page == "💾 Export Model":
+        export_page()
+
+if __name__ == "__main__":
+    main()
