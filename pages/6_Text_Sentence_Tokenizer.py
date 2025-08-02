@@ -30,12 +30,6 @@ st.markdown("""
         margin-top: 2rem;
         margin-bottom: 1rem;
     }
-    .metric-container {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -73,7 +67,6 @@ class TextSentenceTokenizer:
                 st.error(f"❌ Unsupported file format: {file_extension}")
                 return False
                 
-            st.info(f"Columns: {list(self.raw_df.columns)}")
             return True
             
         except Exception as e:
@@ -463,190 +456,7 @@ def tokenization_page():
             )
             
     with col2:
-        st.subheader("📋 Analysis Summary")
-        if st.session_state.tokenizer.sentence_stats:
-            stats = st.session_state.tokenizer.sentence_stats
-            
-            # Generate summary report
-            summary_lines = [
-                "SENTENCE TOKENIZATION STATISTICS",
-                "=" * 40,
-                f"Total sentences: {stats.get('total_sentences', 0):,}",
-                f"Original texts: {stats.get('unique_texts', 0):,}",
-                f"Avg sentences per text: {stats.get('avg_sentences_per_text', 0):.2f}",
-                "",
-                "Length Statistics:",
-            ]
-            
-            if stats.get('length_stats') and not stats['length_stats'].empty:
-                for key, value in stats['length_stats'].items():
-                    summary_lines.append(f"  {key}: {value:.1f}")
-            
-            summary_lines.extend([
-                "",
-                "Word Count Statistics:",
-            ])
-            
-            if stats.get('word_count_stats') and not stats['word_count_stats'].empty:
-                for key, value in stats['word_count_stats'].items():
-                    summary_lines.append(f"  {key}: {value:.1f}")
-            
-            summary_lines.extend([
-                "",
-                f"Punctuation coverage: {stats.get('punctuation_pct', 0):.1f}%",
-                f"Capitalization coverage: {stats.get('capitalization_pct', 0):.1f}%"
-            ])
-            
-            summary_text = "\n".join(summary_lines)
-            
-            st.download_button(
-                label="📥 Download Analysis Summary (TXT)",
-                data=summary_text,
-                file_name="tokenization_statistics.txt",
-                mime="text/plain"
-            )
-            
-            # Preview
-            with st.expander("👀 Preview Summary"):
-                st.text(summary_text)
-    
-    # Sample sentences export
-    st.subheader("📝 Sample Sentences")
-    
-    if len(tokenized_df) > 0:
-        sample_size = st.slider("Sample size:", 10, min(500, len(tokenized_df)), 100)
-        sample_sentences = tokenized_df.sample(sample_size)
-        
-        # Select available columns for sample export
-        sample_cols = ['sentence_id', 'sentence_text']
-        if 'sentence_length' in sample_sentences.columns:
-            sample_cols.append('sentence_length')
-        if 'word_count' in sample_sentences.columns:
-            sample_cols.append('word_count')
-        
-        sample_csv = sample_sentences[sample_cols].to_csv(index=False)
-        st.download_button(
-            label="📥 Download Sample Sentences (CSV)",
-            data=sample_csv,
-            file_name=f"sample_sentences_{sample_size}.csv",
-            mime="text/csv"
-        )
-        
-        with st.expander("👀 Preview Sample"):
-            st.dataframe(sample_sentences[sample_cols].head(10), use_container_width=True)
-
-def show_progress():
-    """Show progress in sidebar"""
-    st.sidebar.markdown("### 📋 Progress")
-    
-    steps = [
-        ("📁 Data Upload", st.session_state.data_loaded),
-        ("🔧 Tokenization", st.session_state.tokenization_done),
-    ]
-    
-    for step, completed in steps:
-        if completed:
-            st.sidebar.success(f"✅ {step}")
-        else:
-            st.sidebar.info(f"⏳ {step}")
-
-def show_data_stats():
-    """Show data statistics in sidebar"""
-    if st.session_state.data_loaded:
-        tokenizer = st.session_state.tokenizer
-        
-        st.sidebar.markdown("### 📊 Data Info")
-        
-        if tokenizer.raw_df is not None:
-            st.sidebar.metric("Original Texts", len(tokenizer.raw_df))
-        
-        if st.session_state.tokenization_done and tokenizer.tokenized_df is not None:
-            st.sidebar.metric("Total Sentences", len(tokenizer.tokenized_df))
-            
-            if tokenizer.sentence_stats:
-                avg_length = tokenizer.sentence_stats.get('length_stats', {}).get('mean', 0)
-                st.sidebar.metric("Avg Length", f"{avg_length:.0f} chars")
-
-def main():
-    st.markdown("<h1 class='main-header'>📝 Text Sentence Tokenizer</h1>", unsafe_allow_html=True)
-    st.markdown("### Transform your text data into sentence-level format for analysis")
-
-    # Sidebar navigation
-    st.sidebar.title("🔧 Navigation")
-    
-    # Show progress and stats
-    show_progress()
-    show_data_stats()
-    
-    st.sidebar.markdown("---")
-    
-    page = st.sidebar.selectbox(
-        "Choose a section:",
-        ["📁 Data Upload", "🔧 Tokenization", "📊 Analysis", "📝 Sample Sentences", "🔍 Search", "💾 Export"]
-    )
-
-    # Add help section in sidebar
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### ❓ Help")
-    
-    with st.sidebar.expander("📋 Supported Formats"):
-        st.markdown("""
-        **CSV Files:**
-        - Must have at least one text column
-        - Column headers in first row
-        
-        **TXT Files:**
-        - Each line becomes a separate text entry
-        - UTF-8 encoding recommended
-        
-        **Excel Files:**
-        - .xlsx or .xls format
-        - Must have at least one text column
-        """)
-    
-    with st.sidebar.expander("🔧 Tokenization Types"):
-        st.markdown("""
-        **Basic:** Standard punctuation splitting
-        - Periods, exclamations, questions
-        - Simple and fast
-        
-        **Advanced:** Smart splitting
-        - Handles abbreviations (Dr., Mr., etc.)
-        - Protects URLs and emails
-        - More accurate results
-        
-        **Custom:** Your own patterns
-        - Define regex patterns
-        - Maximum flexibility
-        - Requires regex knowledge
-        """)
-    
-    with st.sidebar.expander("💡 Tips"):
-        st.markdown("""
-        - Start with **Basic** tokenization
-        - Use **Advanced** for formal text
-        - Set appropriate length filters
-        - Check sample results before export
-        - Search functionality helps validate results
-        """)
-
-    # Main page routing
-    if page == "📁 Data Upload":
-        data_upload_page()
-    elif page == "🔧 Tokenization":
-        tokenization_page()
-    elif page == "📊 Analysis":
-        analysis_page()
-    elif page == "📝 Sample Sentences":
-        sample_sentences_page()
-    elif page == "🔍 Search":
-        search_page()
-    elif page == "💾 Export":
-        export_page()
-
-# Run the app
-if __name__ == "__main__":
-    main()("📊 Current Data Info")
+        st.subheader("📊 Current Data Info")
         if hasattr(st.session_state.tokenizer, 'raw_df') and st.session_state.tokenizer.raw_df is not None:
             st.metric("Total Texts", len(st.session_state.tokenizer.raw_df))
             
@@ -873,4 +683,187 @@ def export_page():
             st.dataframe(tokenized_df.head(10), use_container_width=True)
     
     with col2:
-        st.subheader
+        st.subheader("📋 Analysis Summary")
+        if st.session_state.tokenizer.sentence_stats:
+            stats = st.session_state.tokenizer.sentence_stats
+            
+            # Generate summary report
+            summary_lines = [
+                "SENTENCE TOKENIZATION STATISTICS",
+                "=" * 40,
+                f"Total sentences: {stats.get('total_sentences', 0):,}",
+                f"Original texts: {stats.get('unique_texts', 0):,}",
+                f"Avg sentences per text: {stats.get('avg_sentences_per_text', 0):.2f}",
+                "",
+                "Length Statistics:",
+            ]
+            
+            if stats.get('length_stats') and not stats['length_stats'].empty:
+                for key, value in stats['length_stats'].items():
+                    summary_lines.append(f"  {key}: {value:.1f}")
+            
+            summary_lines.extend([
+                "",
+                "Word Count Statistics:",
+            ])
+            
+            if stats.get('word_count_stats') and not stats['word_count_stats'].empty:
+                for key, value in stats['word_count_stats'].items():
+                    summary_lines.append(f"  {key}: {value:.1f}")
+            
+            summary_lines.extend([
+                "",
+                f"Punctuation coverage: {stats.get('punctuation_pct', 0):.1f}%",
+                f"Capitalization coverage: {stats.get('capitalization_pct', 0):.1f}%"
+            ])
+            
+            summary_text = "\n".join(summary_lines)
+            
+            st.download_button(
+                label="📥 Download Analysis Summary (TXT)",
+                data=summary_text,
+                file_name="tokenization_statistics.txt",
+                mime="text/plain"
+            )
+            
+            # Preview
+            with st.expander("👀 Preview Summary"):
+                st.text(summary_text)
+    
+    # Sample sentences export
+    st.subheader("📝 Sample Sentences")
+    
+    if len(tokenized_df) > 0:
+        sample_size = st.slider("Sample size:", 10, min(500, len(tokenized_df)), 100)
+        sample_sentences = tokenized_df.sample(sample_size)
+        
+        # Select available columns for sample export
+        sample_cols = ['sentence_id', 'sentence_text']
+        if 'sentence_length' in sample_sentences.columns:
+            sample_cols.append('sentence_length')
+        if 'word_count' in sample_sentences.columns:
+            sample_cols.append('word_count')
+        
+        sample_csv = sample_sentences[sample_cols].to_csv(index=False)
+        st.download_button(
+            label="📥 Download Sample Sentences (CSV)",
+            data=sample_csv,
+            file_name=f"sample_sentences_{sample_size}.csv",
+            mime="text/csv"
+        )
+        
+        with st.expander("👀 Preview Sample"):
+            st.dataframe(sample_sentences[sample_cols].head(10), use_container_width=True)
+
+def show_progress():
+    """Show progress in sidebar"""
+    st.sidebar.markdown("### 📋 Progress")
+    
+    steps = [
+        ("📁 Data Upload", st.session_state.data_loaded),
+        ("🔧 Tokenization", st.session_state.tokenization_done),
+    ]
+    
+    for step, completed in steps:
+        if completed:
+            st.sidebar.success(f"✅ {step}")
+        else:
+            st.sidebar.info(f"⏳ {step}")
+
+def show_data_stats():
+    """Show data statistics in sidebar"""
+    if st.session_state.data_loaded:
+        tokenizer = st.session_state.tokenizer
+        
+        st.sidebar.markdown("### 📊 Data Info")
+        
+        if tokenizer.raw_df is not None:
+            st.sidebar.metric("Original Texts", len(tokenizer.raw_df))
+        
+        if st.session_state.tokenization_done and tokenizer.tokenized_df is not None:
+            st.sidebar.metric("Total Sentences", len(tokenizer.tokenized_df))
+            
+            if tokenizer.sentence_stats:
+                avg_length = tokenizer.sentence_stats.get('length_stats', {}).get('mean', 0)
+                st.sidebar.metric("Avg Length", f"{avg_length:.0f} chars")
+
+def main():
+    st.markdown("<h1 class='main-header'>📝 Text Sentence Tokenizer</h1>", unsafe_allow_html=True)
+    st.markdown("### Transform your text data into sentence-level format for analysis")
+
+    # Sidebar navigation
+    st.sidebar.title("🔧 Navigation")
+    
+    # Show progress and stats
+    show_progress()
+    show_data_stats()
+    
+    st.sidebar.markdown("---")
+    
+    page = st.sidebar.selectbox(
+        "Choose a section:",
+        ["📁 Data Upload", "🔧 Tokenization", "📊 Analysis", "📝 Sample Sentences", "🔍 Search", "💾 Export"]
+    )
+
+    # Add help section in sidebar
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### ❓ Help")
+    
+    with st.sidebar.expander("📋 Supported Formats"):
+        st.markdown("""
+        **CSV Files:**
+        - Must have at least one text column
+        - Column headers in first row
+        
+        **TXT Files:**
+        - Each line becomes a separate text entry
+        - UTF-8 encoding recommended
+        
+        **Excel Files:**
+        - .xlsx or .xls format
+        - Must have at least one text column
+        """)
+    
+    with st.sidebar.expander("🔧 Tokenization Types"):
+        st.markdown("""
+        **Basic:** Standard punctuation splitting
+        - Periods, exclamations, questions
+        - Simple and fast
+        
+        **Advanced:** Smart splitting
+        - Handles abbreviations (Dr., Mr., etc.)
+        - Protects URLs and emails
+        - More accurate results
+        
+        **Custom:** Your own patterns
+        - Define regex patterns
+        - Maximum flexibility
+        - Requires regex knowledge
+        """)
+    
+    with st.sidebar.expander("💡 Tips"):
+        st.markdown("""
+        - Start with **Basic** tokenization
+        - Use **Advanced** for formal text
+        - Set appropriate length filters
+        - Check sample results before export
+        - Search functionality helps validate results
+        """)
+
+    # Main page routing
+    if page == "📁 Data Upload":
+        data_upload_page()
+    elif page == "🔧 Tokenization":
+        tokenization_page()
+    elif page == "📊 Analysis":
+        analysis_page()
+    elif page == "📝 Sample Sentences":
+        sample_sentences_page()
+    elif page == "🔍 Search":
+        search_page()
+    elif page == "💾 Export":
+        export_page()
+
+# Run the app
+if __name__ == "__main__":
+    main()
