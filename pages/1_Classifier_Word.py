@@ -16,7 +16,7 @@ except ImportError:
 
 # Set page configuration
 st.set_page_config(
-    page_title="Instagram Personalized Language Analyzer",
+    page_title="Classifier Word Metrics",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -48,7 +48,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Main title
-st.markdown('<h1 class="main-header">📊 Instagram Personalized Language Analyzer</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">📊 Classifier Word Metrics</h1>', unsafe_allow_html=True)
 
 # Initialize session state
 if 'analysis_complete' not in st.session_state:
