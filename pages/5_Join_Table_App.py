@@ -38,20 +38,6 @@ st.markdown("""
         border-radius: 0.5rem;
         margin: 0.5rem 0;
     }
-    .success-box {
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
-        border-radius: 0.25rem;
-        padding: 0.75rem;
-        margin: 0.5rem 0;
-    }
-    .warning-box {
-        background-color: #fff3cd;
-        border: 1px solid #ffeaa7;
-        border-radius: 0.25rem;
-        padding: 0.75rem;
-        margin: 0.5rem 0;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -119,274 +105,6 @@ class InstagramJoinAnalyzer:
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Word Count", len(words))
-        
-        with col2:
-            st.metric("Keywords Found", len(found_keywords))
-        
-        with col3:
-            density = len(found_keywords) / len(words) if words else 0
-            st.metric("Keyword Density", f"{density:.3f}")
-        
-        with col4:
-            features = sum([
-                '!' in sample_text,
-                '?' in sample_text,
-                '#' in sample_text,
-                '@' in sample_text
-            ])
-            st.metric("Special Features", features)
-        
-        if found_keywords:
-            st.subheader("✅ Keywords Found")
-            # Display keywords as tags
-            keyword_tags = " ".join([f"`{kw}`" for kw in found_keywords])
-            st.markdown(keyword_tags)
-            
-            # Show performance of found keywords
-            if st.session_state.analyzer.keyword_stats['avg_engagement']:
-                st.subheader("📊 Keyword Performance")
-                perf_data = []
-                for kw in found_keywords:
-                    if kw in st.session_state.analyzer.keyword_stats['avg_engagement']:
-                        perf_data.append({
-                            'Keyword': kw,
-                            'Avg Engagement': st.session_state.analyzer.keyword_stats['avg_engagement'][kw],
-                            'Frequency': st.session_state.analyzer.keyword_stats['frequency'].get(kw, 0)
-                        })
-                
-                if perf_data:
-                    perf_df = pd.DataFrame(perf_data)
-                    st.dataframe(perf_df, use_container_width=True)
-
-def export_page():
-    st.markdown("<h2 class='section-header'>💾 Export Results</h2>", unsafe_allow_html=True)
-    
-    if not st.session_state.data_joined:
-        st.warning("⚠️ No data available to export. Please complete the analysis first.")
-        return
-
-    st.subheader("📄 Available Exports")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📊 Joined Dataset")
-        if st.session_state.analyzer.joined_df is not None:
-            st.success(f"✅ {st.session_state.analyzer.joined_df.shape[0]} rows available")
-            
-            # Convert DataFrame to CSV
-            csv_data = st.session_state.analyzer.joined_df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Joined Dataset (CSV)",
-                data=csv_data,
-                file_name="instagram_joined_data.csv",
-                mime="text/csv"
-            )
-            
-            # Preview
-            with st.expander("👀 Preview Data"):
-                st.dataframe(st.session_state.analyzer.joined_df.head(10), use_container_width=True)
-    
-    with col2:
-        st.subheader("🔑 Keyword Analysis")
-        if st.session_state.analysis_done and st.session_state.analyzer.keyword_stats['avg_engagement']:
-            keyword_results = pd.DataFrame([
-                {
-                    'keyword': kw,
-                    'avg_engagement': avg_eng,
-                    'frequency': st.session_state.analyzer.keyword_stats['frequency'].get(kw, 0)
-                }
-                for kw, avg_eng in st.session_state.analyzer.keyword_stats['avg_engagement'].items()
-            ])
-            
-            st.success(f"✅ {len(keyword_results)} keywords analyzed")
-            
-            # Convert DataFrame to CSV
-            keyword_csv = keyword_results.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Keyword Analysis (CSV)",
-                data=keyword_csv,
-                file_name="keyword_analysis_results.csv",
-                mime="text/csv"
-            )
-            
-            # Preview
-            with st.expander("👀 Preview Keywords"):
-                st.dataframe(keyword_results.head(10), use_container_width=True)
-        else:
-            st.info("⏳ Complete keyword analysis to enable export")
-
-    # Summary Report
-    st.markdown("---")
-    st.subheader("📋 Analysis Summary Report")
-    
-    if st.button("📄 Generate Summary Report"):
-        summary_report = generate_summary_report()
-        
-        st.download_button(
-            label="📥 Download Summary Report (TXT)",
-            data=summary_report,
-            file_name="instagram_analysis_summary.txt",
-            mime="text/plain"
-        )
-        
-        with st.expander("👀 Preview Summary Report"):
-            st.text(summary_report)
-
-def generate_summary_report():
-    """Generate a text summary report of the analysis"""
-    analyzer = st.session_state.analyzer
-    
-    report = []
-    report.append("INSTAGRAM JOIN TABLE ANALYZER - SUMMARY REPORT")
-    report.append("=" * 60)
-    report.append(f"Generated on: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    report.append("")
-    
-    # Dataset information
-    report.append("DATASET INFORMATION")
-    report.append("-" * 30)
-    if analyzer.joined_df is not None:
-        report.append(f"Total posts analyzed: {analyzer.joined_df.shape[0]}")
-        report.append(f"Total columns: {analyzer.joined_df.shape[1]}")
-        
-        if 'total_engagement' in analyzer.joined_df.columns:
-            total_eng = analyzer.joined_df['total_engagement'].sum()
-            avg_eng = analyzer.joined_df['total_engagement'].mean()
-            median_eng = analyzer.joined_df['total_engagement'].median()
-            report.append(f"Total engagement: {total_eng:,.0f}")
-            report.append(f"Average engagement per post: {avg_eng:.1f}")
-            report.append(f"Median engagement per post: {median_eng:.1f}")
-    
-    report.append("")
-    
-    # Keyword analysis
-    if analyzer.keyword_stats and analyzer.keyword_stats['avg_engagement']:
-        report.append("KEYWORD ANALYSIS")
-        report.append("-" * 30)
-        report.append(f"Total keywords analyzed: {len(analyzer.keywords)}")
-        report.append(f"Keywords found in posts: {len(analyzer.keyword_stats['avg_engagement'])}")
-        
-        # Top performing keywords
-        report.append("\nTOP 10 KEYWORDS BY AVERAGE ENGAGEMENT:")
-        sorted_keywords = sorted(analyzer.keyword_stats['avg_engagement'].items(), 
-                               key=lambda x: x[1], reverse=True)
-        for i, (keyword, avg_eng) in enumerate(sorted_keywords[:10], 1):
-            freq = analyzer.keyword_stats['frequency'].get(keyword, 0)
-            report.append(f"{i:2d}. {keyword:<20} | Avg: {avg_eng:6.1f} | Freq: {freq:3d}")
-        
-        # Most frequent keywords
-        report.append("\nTOP 10 MOST FREQUENT KEYWORDS:")
-        sorted_freq = sorted(analyzer.keyword_stats['frequency'].items(), 
-                           key=lambda x: x[1], reverse=True)
-        for i, (keyword, freq) in enumerate(sorted_freq[:10], 1):
-            avg_eng = analyzer.keyword_stats['avg_engagement'].get(keyword, 0)
-            report.append(f"{i:2d}. {keyword:<20} | Freq: {freq:3d} | Avg: {avg_eng:6.1f}")
-    
-    report.append("")
-    report.append("END OF REPORT")
-    report.append("=" * 60)
-    
-    return "\n".join(report)
-
-# Add some helper functions for better user experience
-def show_analysis_progress():
-    """Show analysis progress and status"""
-    progress_items = [
-        ("📁 Data Upload", st.session_state.data_loaded),
-        ("🔗 Join Datasets", st.session_state.data_joined),
-        ("📊 Keyword Analysis", st.session_state.analysis_done),
-    ]
-    
-    st.sidebar.markdown("### 📋 Analysis Progress")
-    
-    for item, completed in progress_items:
-        if completed:
-            st.sidebar.success(f"✅ {item}")
-        else:
-            st.sidebar.info(f"⏳ {item}")
-
-def show_data_stats():
-    """Show current data statistics in sidebar"""
-    if st.session_state.data_loaded:
-        analyzer = st.session_state.analyzer
-        
-        st.sidebar.markdown("### 📊 Data Statistics")
-        
-        if analyzer.posts_df is not None:
-            st.sidebar.metric("Posts Loaded", len(analyzer.posts_df))
-        
-        if analyzer.engagement_df is not None:
-            st.sidebar.metric("Engagement Records", len(analyzer.engagement_df))
-        
-        if analyzer.joined_df is not None:
-            st.sidebar.metric("Joined Records", len(analyzer.joined_df))
-        
-        if analyzer.keywords:
-            st.sidebar.metric("Keywords", len(analyzer.keywords))
-
-# Enhanced main function with sidebar information
-def main():
-    st.markdown("<h1 class='main-header'>📊 Instagram Join Table Analyzer</h1>", unsafe_allow_html=True)
-    st.markdown("### Analyze Instagram engagement based on personalized language patterns")
-
-    # Sidebar navigation
-    st.sidebar.title("🔧 Navigation")
-    
-    # Show progress and stats
-    show_analysis_progress()
-    show_data_stats()
-    
-    st.sidebar.markdown("---")
-    
-    page = st.sidebar.selectbox(
-        "Choose a section:",
-        ["📁 Data Upload", "🔗 Join & Explore", "📊 Keyword Analysis", "🔮 Predictions", "💾 Export Results"]
-    )
-
-    # Add help section in sidebar
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### ❓ Need Help?")
-    
-    with st.sidebar.expander("📋 Data Format Requirements"):
-        st.markdown("""
-        **Posts CSV must have:**
-        - `ID`: Unique post identifier
-        - `Statement`: Post text content
-        
-        **Engagement CSV must have:**
-        - `shortcode`: Post identifier (matches ID)
-        - `number_likes`: Number of likes
-        - `number_comments`: Number of comments
-        """)
-    
-    with st.sidebar.expander("🔧 How to Use"):
-        st.markdown("""
-        1. **Upload Data**: Upload your posts and engagement CSV files
-        2. **Join & Explore**: Join datasets and explore the data
-        3. **Keyword Analysis**: Analyze keyword performance
-        4. **Predictions**: Test engagement predictions
-        5. **Export**: Download your results
-        """)
-
-    # Main page routing
-    if page == "📁 Data Upload":
-        data_upload_page()
-    elif page == "🔗 Join & Explore":
-        join_explore_page()
-    elif page == "📊 Keyword Analysis":
-        keyword_analysis_page()
-    elif page == "🔮 Predictions":
-        prediction_page()
-    elif page == "💾 Export Results":
-        export_page()
-
-# Run the app
-if __name__ == "__main__":
-    # Set matplotlib backend for Streamlit
-    plt.style.use('default')  # Use default instead of seaborn-v0_8 for better Streamlit compatibility
-    main()
             st.metric("Posts Matched", f"{posts_matched}/{posts_total}")
         with col2:
             st.metric("Match Rate", f"{posts_matched/posts_total*100:.1f}%")
@@ -742,29 +460,6 @@ if 'data_joined' not in st.session_state:
 if 'analysis_done' not in st.session_state:
     st.session_state.analysis_done = False
 
-def main():
-    st.markdown("<h1 class='main-header'>📊 Instagram Join Table Analyzer</h1>", unsafe_allow_html=True)
-    st.markdown("### Analyze Instagram engagement based on personalized language patterns")
-
-    # Sidebar navigation
-    st.sidebar.title("🔧 Navigation")
-    
-    page = st.sidebar.selectbox(
-        "Choose a section:",
-        ["📁 Data Upload", "🔗 Join & Explore", "📊 Keyword Analysis", "🔮 Predictions", "💾 Export Results"]
-    )
-
-    if page == "📁 Data Upload":
-        data_upload_page()
-    elif page == "🔗 Join & Explore":
-        join_explore_page()
-    elif page == "📊 Keyword Analysis":
-        keyword_analysis_page()
-    elif page == "🔮 Predictions":
-        prediction_page()
-    elif page == "💾 Export Results":
-        export_page()
-
 def data_upload_page():
     st.markdown("<h2 class='section-header'>📁 Data Upload</h2>", unsafe_allow_html=True)
     
@@ -957,3 +652,267 @@ def prediction_page():
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
+            st.metric("Word Count", len(words))
+        
+        with col2:
+            st.metric("Keywords Found", len(found_keywords))
+        
+        with col3:
+            density = len(found_keywords) / len(words) if words else 0
+            st.metric("Keyword Density", f"{density:.3f}")
+        
+        with col4:
+            features = sum([
+                '!' in sample_text,
+                '?' in sample_text,
+                '#' in sample_text,
+                '@' in sample_text
+            ])
+            st.metric("Special Features", features)
+        
+        if found_keywords:
+            st.subheader("✅ Keywords Found")
+            # Display keywords as tags
+            keyword_tags = " ".join([f"`{kw}`" for kw in found_keywords])
+            st.markdown(keyword_tags)
+            
+            # Show performance of found keywords
+            if st.session_state.analyzer.keyword_stats['avg_engagement']:
+                st.subheader("📊 Keyword Performance")
+                perf_data = []
+                for kw in found_keywords:
+                    if kw in st.session_state.analyzer.keyword_stats['avg_engagement']:
+                        perf_data.append({
+                            'Keyword': kw,
+                            'Avg Engagement': st.session_state.analyzer.keyword_stats['avg_engagement'][kw],
+                            'Frequency': st.session_state.analyzer.keyword_stats['frequency'].get(kw, 0)
+                        })
+                
+                if perf_data:
+                    perf_df = pd.DataFrame(perf_data)
+                    st.dataframe(perf_df, use_container_width=True)
+
+def export_page():
+    st.markdown("<h2 class='section-header'>💾 Export Results</h2>", unsafe_allow_html=True)
+    
+    if not st.session_state.data_joined:
+        st.warning("⚠️ No data available to export. Please complete the analysis first.")
+        return
+
+    st.subheader("📄 Available Exports")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📊 Joined Dataset")
+        if st.session_state.analyzer.joined_df is not None:
+            st.success(f"✅ {st.session_state.analyzer.joined_df.shape[0]} rows available")
+            
+            # Convert DataFrame to CSV
+            csv_data = st.session_state.analyzer.joined_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Joined Dataset (CSV)",
+                data=csv_data,
+                file_name="instagram_joined_data.csv",
+                mime="text/csv"
+            )
+            
+            # Preview
+            with st.expander("👀 Preview Data"):
+                st.dataframe(st.session_state.analyzer.joined_df.head(10), use_container_width=True)
+    
+    with col2:
+        st.subheader("🔑 Keyword Analysis")
+        if st.session_state.analysis_done and st.session_state.analyzer.keyword_stats['avg_engagement']:
+            keyword_results = pd.DataFrame([
+                {
+                    'keyword': kw,
+                    'avg_engagement': avg_eng,
+                    'frequency': st.session_state.analyzer.keyword_stats['frequency'].get(kw, 0)
+                }
+                for kw, avg_eng in st.session_state.analyzer.keyword_stats['avg_engagement'].items()
+            ])
+            
+            st.success(f"✅ {len(keyword_results)} keywords analyzed")
+            
+            # Convert DataFrame to CSV
+            keyword_csv = keyword_results.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Keyword Analysis (CSV)",
+                data=keyword_csv,
+                file_name="keyword_analysis_results.csv",
+                mime="text/csv"
+            )
+            
+            # Preview
+            with st.expander("👀 Preview Keywords"):
+                st.dataframe(keyword_results.head(10), use_container_width=True)
+        else:
+            st.info("⏳ Complete keyword analysis to enable export")
+
+    # Summary Report
+    st.markdown("---")
+    st.subheader("📋 Analysis Summary Report")
+    
+    if st.button("📄 Generate Summary Report"):
+        summary_report = generate_summary_report()
+        
+        st.download_button(
+            label="📥 Download Summary Report (TXT)",
+            data=summary_report,
+            file_name="instagram_analysis_summary.txt",
+            mime="text/plain"
+        )
+        
+        with st.expander("👀 Preview Summary Report"):
+            st.text(summary_report)
+
+def generate_summary_report():
+    """Generate a text summary report of the analysis"""
+    analyzer = st.session_state.analyzer
+    
+    report = []
+    report.append("INSTAGRAM JOIN TABLE ANALYZER - SUMMARY REPORT")
+    report.append("=" * 60)
+    report.append(f"Generated on: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    report.append("")
+    
+    # Dataset information
+    report.append("DATASET INFORMATION")
+    report.append("-" * 30)
+    if analyzer.joined_df is not None:
+        report.append(f"Total posts analyzed: {analyzer.joined_df.shape[0]}")
+        report.append(f"Total columns: {analyzer.joined_df.shape[1]}")
+        
+        if 'total_engagement' in analyzer.joined_df.columns:
+            total_eng = analyzer.joined_df['total_engagement'].sum()
+            avg_eng = analyzer.joined_df['total_engagement'].mean()
+            median_eng = analyzer.joined_df['total_engagement'].median()
+            report.append(f"Total engagement: {total_eng:,.0f}")
+            report.append(f"Average engagement per post: {avg_eng:.1f}")
+            report.append(f"Median engagement per post: {median_eng:.1f}")
+    
+    report.append("")
+    
+    # Keyword analysis
+    if analyzer.keyword_stats and analyzer.keyword_stats['avg_engagement']:
+        report.append("KEYWORD ANALYSIS")
+        report.append("-" * 30)
+        report.append(f"Total keywords analyzed: {len(analyzer.keywords)}")
+        report.append(f"Keywords found in posts: {len(analyzer.keyword_stats['avg_engagement'])}")
+        
+        # Top performing keywords
+        report.append("\nTOP 10 KEYWORDS BY AVERAGE ENGAGEMENT:")
+        sorted_keywords = sorted(analyzer.keyword_stats['avg_engagement'].items(), 
+                               key=lambda x: x[1], reverse=True)
+        for i, (keyword, avg_eng) in enumerate(sorted_keywords[:10], 1):
+            freq = analyzer.keyword_stats['frequency'].get(keyword, 0)
+            report.append(f"{i:2d}. {keyword:<20} | Avg: {avg_eng:6.1f} | Freq: {freq:3d}")
+        
+        # Most frequent keywords
+        report.append("\nTOP 10 MOST FREQUENT KEYWORDS:")
+        sorted_freq = sorted(analyzer.keyword_stats['frequency'].items(), 
+                           key=lambda x: x[1], reverse=True)
+        for i, (keyword, freq) in enumerate(sorted_freq[:10], 1):
+            avg_eng = analyzer.keyword_stats['avg_engagement'].get(keyword, 0)
+            report.append(f"{i:2d}. {keyword:<20} | Freq: {freq:3d} | Avg: {avg_eng:6.1f}")
+    
+    report.append("")
+    report.append("END OF REPORT")
+    report.append("=" * 60)
+    
+    return "\n".join(report)
+
+def show_analysis_progress():
+    """Show analysis progress and status"""
+    progress_items = [
+        ("📁 Data Upload", st.session_state.data_loaded),
+        ("🔗 Join Datasets", st.session_state.data_joined),
+        ("📊 Keyword Analysis", st.session_state.analysis_done),
+    ]
+    
+    st.sidebar.markdown("### 📋 Analysis Progress")
+    
+    for item, completed in progress_items:
+        if completed:
+            st.sidebar.success(f"✅ {item}")
+        else:
+            st.sidebar.info(f"⏳ {item}")
+
+def show_data_stats():
+    """Show current data statistics in sidebar"""
+    if st.session_state.data_loaded:
+        analyzer = st.session_state.analyzer
+        
+        st.sidebar.markdown("### 📊 Data Statistics")
+        
+        if analyzer.posts_df is not None:
+            st.sidebar.metric("Posts Loaded", len(analyzer.posts_df))
+        
+        if analyzer.engagement_df is not None:
+            st.sidebar.metric("Engagement Records", len(analyzer.engagement_df))
+        
+        if analyzer.joined_df is not None:
+            st.sidebar.metric("Joined Records", len(analyzer.joined_df))
+        
+        if analyzer.keywords:
+            st.sidebar.metric("Keywords", len(analyzer.keywords))
+
+def main():
+    st.markdown("<h1 class='main-header'>📊 Instagram Join Table Analyzer</h1>", unsafe_allow_html=True)
+    st.markdown("### Analyze Instagram engagement based on personalized language patterns")
+
+    # Sidebar navigation
+    st.sidebar.title("🔧 Navigation")
+    
+    # Show progress and stats
+    show_analysis_progress()
+    show_data_stats()
+    
+    st.sidebar.markdown("---")
+    
+    page = st.sidebar.selectbox(
+        "Choose a section:",
+        ["📁 Data Upload", "🔗 Join & Explore", "📊 Keyword Analysis", "🔮 Predictions", "💾 Export Results"]
+    )
+
+    # Add help section in sidebar
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### ❓ Need Help?")
+    
+    with st.sidebar.expander("📋 Data Format Requirements"):
+        st.markdown("""
+        **Posts CSV must have:**
+        - `ID`: Unique post identifier
+        - `Statement`: Post text content
+        
+        **Engagement CSV must have:**
+        - `shortcode`: Post identifier (matches ID)
+        - `number_likes`: Number of likes
+        - `number_comments`: Number of comments
+        """)
+    
+    with st.sidebar.expander("🔧 How to Use"):
+        st.markdown("""
+        1. **Upload Data**: Upload your posts and engagement CSV files
+        2. **Join & Explore**: Join datasets and explore the data
+        3. **Keyword Analysis**: Analyze keyword performance
+        4. **Predictions**: Test engagement predictions
+        5. **Export**: Download your results
+        """)
+
+    # Main page routing
+    if page == "📁 Data Upload":
+        data_upload_page()
+    elif page == "🔗 Join & Explore":
+        join_explore_page()
+    elif page == "📊 Keyword Analysis":
+        keyword_analysis_page()
+    elif page == "🔮 Predictions":
+        prediction_page()
+    elif page == "💾 Export Results":
+        export_page()
+
+# Run the app
+if __name__ == "__main__":
+    main()
