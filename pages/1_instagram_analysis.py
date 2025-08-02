@@ -2,12 +2,20 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import re
-import matplotlib.pyplot as plt
-import seaborn as sns
-from scipy import stats
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import io
 import warnings
 warnings.filterwarnings('ignore')
+
+# Try to import scipy, but provide fallback if not available
+try:
+    from scipy import stats
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+    st.warning("⚠️ SciPy not available. Statistical tests will be skipped.")
 
 # Set page configuration
 st.set_page_config(
@@ -129,50 +137,83 @@ def count_keyword_matches(caption, keywords, exact_match=True):
     return pd.Series([total_words, matched_count, matched_keywords])
 
 def create_visualizations(final_df, likes_corr, comments_corr):
-    """Create analysis visualizations"""
-    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-    fig.suptitle('Instagram Personalized Language Analysis', fontsize=16, fontweight='bold')
+    """Create analysis visualizations using Plotly"""
+    # Create subplots
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=(
+            'Distribution of Personalized Language %',
+            f'Personalized Language % vs Likes (r={likes_corr:.3f})',
+            f'Personalized Language % vs Comments (r={comments_corr:.3f})',
+            f'Top {min(10, len(final_df))} Most Personalized Posts'
+        ),
+        specs=[[{"secondary_y": False}, {"secondary_y": False}],
+               [{"secondary_y": False}, {"secondary_y": False}]]
+    )
     
     # 1. Match percentage distribution
-    axes[0,0].hist(final_df['match_pct'], bins=20, alpha=0.7, color='skyblue', edgecolor='black')
-    axes[0,0].set_title('Distribution of Personalized Language %')
-    axes[0,0].set_xlabel('Match Percentage')
-    axes[0,0].set_ylabel('Frequency')
+    fig.add_trace(
+        go.Histogram(x=final_df['match_pct'], nbinsx=20, name='Distribution', 
+                    marker_color='skyblue', opacity=0.7),
+        row=1, col=1
+    )
     
     # 2. Scatter plot: Match % vs Likes
-    axes[0,1].scatter(final_df['match_pct'], final_df['number_likes'], alpha=0.6, color='coral')
-    axes[0,1].set_title(f'Personalized Language % vs Likes (r={likes_corr:.3f})')
-    axes[0,1].set_xlabel('Match Percentage')
-    axes[0,1].set_ylabel('Number of Likes')
+    fig.add_trace(
+        go.Scatter(x=final_df['match_pct'], y=final_df['number_likes'], 
+                  mode='markers', name='Likes', marker=dict(color='coral', opacity=0.6)),
+        row=1, col=2
+    )
     
     # Add trendline for likes
     if len(final_df) > 1:
         z = np.polyfit(final_df['match_pct'], final_df['number_likes'], 1)
         p = np.poly1d(z)
-        axes[0,1].plot(final_df['match_pct'], p(final_df['match_pct']), "r--", alpha=0.8)
+        x_trend = np.linspace(final_df['match_pct'].min(), final_df['match_pct'].max(), 100)
+        fig.add_trace(
+            go.Scatter(x=x_trend, y=p(x_trend), mode='lines', 
+                      name='Trend', line=dict(color='red', dash='dash')),
+            row=1, col=2
+        )
     
     # 3. Scatter plot: Match % vs Comments
-    axes[1,0].scatter(final_df['match_pct'], final_df['number_comments'], alpha=0.6, color='lightgreen')
-    axes[1,0].set_title(f'Personalized Language % vs Comments (r={comments_corr:.3f})')
-    axes[1,0].set_xlabel('Match Percentage')
-    axes[1,0].set_ylabel('Number of Comments')
+    fig.add_trace(
+        go.Scatter(x=final_df['match_pct'], y=final_df['number_comments'], 
+                  mode='markers', name='Comments', marker=dict(color='lightgreen', opacity=0.6)),
+        row=2, col=1
+    )
     
     # Add trendline for comments
     if len(final_df) > 1:
         z2 = np.polyfit(final_df['match_pct'], final_df['number_comments'], 1)
         p2 = np.poly1d(z2)
-        axes[1,0].plot(final_df['match_pct'], p2(final_df['match_pct']), "r--", alpha=0.8)
+        fig.add_trace(
+            go.Scatter(x=x_trend, y=p2(x_trend), mode='lines', 
+                      name='Trend', line=dict(color='red', dash='dash')),
+            row=2, col=1
+        )
     
     # 4. Top performing posts by personalization
     top_posts = final_df.nlargest(min(10, len(final_df)), 'match_pct')
     if len(top_posts) > 0:
-        axes[1,1].barh(range(len(top_posts)), top_posts['match_pct'], color='gold', alpha=0.7)
-        axes[1,1].set_title(f'Top {len(top_posts)} Most Personalized Posts')
-        axes[1,1].set_xlabel('Match Percentage')
-        axes[1,1].set_ylabel('Post Rank')
-        axes[1,1].invert_yaxis()
+        fig.add_trace(
+            go.Bar(y=list(range(len(top_posts))), x=top_posts['match_pct'], 
+                  orientation='h', name='Top Posts', marker_color='gold', opacity=0.7),
+            row=2, col=2
+        )
     
-    plt.tight_layout()
+    # Update layout
+    fig.update_layout(height=800, showlegend=False, 
+                     title_text="Instagram Personalized Language Analysis")
+    fig.update_xaxes(title_text="Match Percentage", row=1, col=1)
+    fig.update_yaxes(title_text="Frequency", row=1, col=1)
+    fig.update_xaxes(title_text="Match Percentage", row=1, col=2)
+    fig.update_yaxes(title_text="Number of Likes", row=1, col=2)
+    fig.update_xaxes(title_text="Match Percentage", row=2, col=1)
+    fig.update_yaxes(title_text="Number of Comments", row=2, col=1)
+    fig.update_xaxes(title_text="Match Percentage", row=2, col=2)
+    fig.update_yaxes(title_text="Post Rank", row=2, col=2)
+    
     return fig
 
 def get_recommendation(likes_corr):
@@ -351,27 +392,30 @@ if st.session_state.analysis_complete and st.session_state.final_df is not None:
             st.warning("📉 Weak correlation with likes in this dataset.")
         
         # Statistical significance test
-        personalized_posts = final_df[final_df['match_pct'] > 0]['number_likes']
-        non_personalized_posts = final_df[final_df['match_pct'] == 0]['number_likes']
-        
-        if len(personalized_posts) > 0 and len(non_personalized_posts) > 0:
-            t_stat, p_value = stats.ttest_ind(personalized_posts, non_personalized_posts)
+        if SCIPY_AVAILABLE:
+            personalized_posts = final_df[final_df['match_pct'] > 0]['number_likes']
+            non_personalized_posts = final_df[final_df['match_pct'] == 0]['number_likes']
             
-            st.subheader("📊 Statistical Analysis")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                avg_likes_personalized = personalized_posts.mean()
-                st.metric("Avg Likes (Personalized)", f"{avg_likes_personalized:.0f}")
-            with col2:
-                avg_likes_non_personalized = non_personalized_posts.mean()
-                st.metric("Avg Likes (Non-personalized)", f"{avg_likes_non_personalized:.0f}")
-            with col3:
-                st.metric("T-test p-value", f"{p_value:.4f}")
-            
-            if p_value < 0.05:
-                st.success("✅ Statistically significant difference in engagement!")
-            else:
-                st.info("ℹ️ No statistically significant difference found.")
+            if len(personalized_posts) > 0 and len(non_personalized_posts) > 0:
+                t_stat, p_value = stats.ttest_ind(personalized_posts, non_personalized_posts)
+                
+                st.subheader("📊 Statistical Analysis")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    avg_likes_personalized = personalized_posts.mean()
+                    st.metric("Avg Likes (Personalized)", f"{avg_likes_personalized:.0f}")
+                with col2:
+                    avg_likes_non_personalized = non_personalized_posts.mean()
+                    st.metric("Avg Likes (Non-personalized)", f"{avg_likes_non_personalized:.0f}")
+                with col3:
+                    st.metric("T-test p-value", f"{p_value:.4f}")
+                
+                if p_value < 0.05:
+                    st.success("✅ Statistically significant difference in engagement!")
+                else:
+                    st.info("ℹ️ No statistically significant difference found.")
+        else:
+            st.info("📊 Statistical significance tests require SciPy package.")
     
     # Visualizations
     st.subheader("📊 Visualizations")
@@ -381,15 +425,11 @@ if st.session_state.analysis_complete and st.session_state.final_df is not None:
         comments_corr = final_df['match_pct'].corr(final_df['number_comments'])
         
         fig = create_visualizations(final_df, likes_corr, comments_corr)
-        st.pyplot(fig)
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        # Simple histogram if no engagement data
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.hist(final_df['match_pct'], bins=20, alpha=0.7, color='skyblue', edgecolor='black')
-        ax.set_title('Distribution of Personalized Language %')
-        ax.set_xlabel('Match Percentage')
-        ax.set_ylabel('Frequency')
-        st.pyplot(fig)
+        # Simple histogram if no engagement data using Streamlit's built-in chart
+        st.subheader("Distribution of Personalized Language %")
+        st.bar_chart(final_df['match_pct'].value_counts().sort_index())
     
     # Detailed results table
     st.subheader("📋 Detailed Results")
