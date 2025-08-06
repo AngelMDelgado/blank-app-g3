@@ -506,16 +506,24 @@ def analysis_page():
     st.session_state.tokenizer.analyze_sentence_statistics()
     stats = st.session_state.tokenizer.sentence_stats
 
+    # Check if stats is valid
+    if stats is None or not isinstance(stats, dict):
+        st.error("❌ Unable to generate statistics. Please try tokenizing again.")
+        return
+
     # Overview metrics
     st.subheader("📈 Overview Statistics")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Total Sentences", f"{stats['total_sentences']:,}")
+        total_sentences = stats.get('total_sentences', 0)
+        st.metric("Total Sentences", f"{total_sentences:,}")
     with col2:
-        st.metric("Original Texts", f"{stats['unique_texts']:,}")
+        unique_texts = stats.get('unique_texts', 0)
+        st.metric("Original Texts", f"{unique_texts:,}")
     with col3:
-        st.metric("Avg Sentences/Text", f"{stats['avg_sentences_per_text']:.1f}")
+        avg_sentences = stats.get('avg_sentences_per_text', 0)
+        st.metric("Avg Sentences/Text", f"{avg_sentences:.1f}")
     with col4:
         punctuation_pct = stats.get('punctuation_pct', 0)
         st.metric("With Punctuation", f"{punctuation_pct:.1f}%")
@@ -526,16 +534,13 @@ def analysis_page():
     with col1:
         st.subheader("📏 Length Statistics")
         try:
-            if 'length_stats' in stats and stats['length_stats'] is not None:
-                length_stats = stats['length_stats']
-                if hasattr(length_stats, 'index') and hasattr(length_stats, 'values'):
-                    length_df = pd.DataFrame({
-                        'Statistic': length_stats.index,
-                        'Value': length_stats.values
-                    })
-                    st.dataframe(length_df, use_container_width=True)
-                else:
-                    st.info("Length statistics not available")
+            length_stats = stats.get('length_stats')
+            if length_stats is not None and hasattr(length_stats, 'index') and hasattr(length_stats, 'values'):
+                length_df = pd.DataFrame({
+                    'Statistic': length_stats.index,
+                    'Value': length_stats.values
+                })
+                st.dataframe(length_df, use_container_width=True)
             else:
                 st.info("Length statistics not available")
         except Exception as e:
@@ -544,16 +549,13 @@ def analysis_page():
     with col2:
         st.subheader("📝 Word Count Statistics")
         try:
-            if 'word_count_stats' in stats and stats['word_count_stats'] is not None:
-                word_count_stats = stats['word_count_stats']
-                if hasattr(word_count_stats, 'index') and hasattr(word_count_stats, 'values'):
-                    word_df = pd.DataFrame({
-                        'Statistic': word_count_stats.index,
-                        'Value': word_count_stats.values
-                    })
-                    st.dataframe(word_df, use_container_width=True)
-                else:
-                    st.info("Word count statistics not available")
+            word_count_stats = stats.get('word_count_stats')
+            if word_count_stats is not None and hasattr(word_count_stats, 'index') and hasattr(word_count_stats, 'values'):
+                word_df = pd.DataFrame({
+                    'Statistic': word_count_stats.index,
+                    'Value': word_count_stats.values
+                })
+                st.dataframe(word_df, use_container_width=True)
             else:
                 st.info("Word count statistics not available")
         except Exception as e:
@@ -562,39 +564,57 @@ def analysis_page():
     # Visualizations using Streamlit charts
     st.subheader("📊 Data Visualizations")
     
+    # Check if tokenized dataframe exists before visualization
+    if st.session_state.tokenizer.tokenized_df is None or st.session_state.tokenizer.tokenized_df.empty:
+        st.warning("⚠️ No tokenized data available for visualization")
+        return
+    
     col1, col2 = st.columns(2)
     
     with col1:
         # Sentence length distribution
-        if 'sentence_length' in st.session_state.tokenizer.tokenized_df.columns:
-            st.subheader("Sentence Length Distribution")
-            length_counts = st.session_state.tokenizer.tokenized_df['sentence_length'].value_counts().sort_index()
-            st.bar_chart(length_counts)
+        try:
+            if 'sentence_length' in st.session_state.tokenizer.tokenized_df.columns:
+                st.subheader("Sentence Length Distribution")
+                length_counts = st.session_state.tokenizer.tokenized_df['sentence_length'].value_counts().sort_index()
+                st.bar_chart(length_counts)
+        except Exception as e:
+            st.info("Length distribution chart not available")
         
         # Word count distribution
-        if 'word_count' in st.session_state.tokenizer.tokenized_df.columns:
-            st.subheader("Word Count Distribution")
-            word_counts = st.session_state.tokenizer.tokenized_df['word_count'].value_counts().sort_index()
-            st.bar_chart(word_counts)
+        try:
+            if 'word_count' in st.session_state.tokenizer.tokenized_df.columns:
+                st.subheader("Word Count Distribution")
+                word_counts = st.session_state.tokenizer.tokenized_df['word_count'].value_counts().sort_index()
+                st.bar_chart(word_counts)
+        except Exception as e:
+            st.info("Word count distribution chart not available")
     
     with col2:
         # Sentences per text
-        if 'original_text_id' in st.session_state.tokenizer.tokenized_df.columns:
-            st.subheader("Sentences per Original Text")
-            sentences_per_text = st.session_state.tokenizer.tokenized_df.groupby('original_text_id').size()
-            st.bar_chart(sentences_per_text.value_counts().sort_index())
+        try:
+            if 'original_text_id' in st.session_state.tokenizer.tokenized_df.columns:
+                st.subheader("Sentences per Original Text")
+                sentences_per_text = st.session_state.tokenizer.tokenized_df.groupby('original_text_id').size()
+                st.bar_chart(sentences_per_text.value_counts().sort_index())
+        except Exception as e:
+            st.info("Sentences per text chart not available")
         
         # Content features
-        st.subheader("Content Features")
-        if all(col in st.session_state.tokenizer.tokenized_df.columns for col in ['has_punctuation', 'has_capitalization']):
-            feature_data = pd.DataFrame({
-                'Feature': ['With Punctuation', 'With Capitalization'],
-                'Count': [
-                    st.session_state.tokenizer.tokenized_df['has_punctuation'].sum(),
-                    st.session_state.tokenizer.tokenized_df['has_capitalization'].sum()
-                ]
-            })
-            st.bar_chart(feature_data.set_index('Feature'))
+        try:
+            st.subheader("Content Features")
+            required_cols = ['has_punctuation', 'has_capitalization']
+            if all(col in st.session_state.tokenizer.tokenized_df.columns for col in required_cols):
+                feature_data = pd.DataFrame({
+                    'Feature': ['With Punctuation', 'With Capitalization'],
+                    'Count': [
+                        st.session_state.tokenizer.tokenized_df['has_punctuation'].sum(),
+                        st.session_state.tokenizer.tokenized_df['has_capitalization'].sum()
+                    ]
+                })
+                st.bar_chart(feature_data.set_index('Feature'))
+        except Exception as e:
+            st.info("Content features chart not available")
 
 def sample_sentences_page():
     st.markdown("<h2 class='section-header'>📝 Sample Sentences</h2>", unsafe_allow_html=True)
