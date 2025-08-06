@@ -1,262 +1,213 @@
 import streamlit as st
-import pandas as pd
-import json
-from typing import Dict, Set, List, Tuple
-from io import StringIO
+import os
+from pathlib import Path
 
-# Page configuration
+    # Page configuration
 st.set_page_config(
-    page_title="Dictionary Text Classifier",
-    page_icon="🔍",
-    layout="wide"
+    page_title="Text Analysis & Classification Suite",
+    page_icon="🧠",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
-# Your main page content here
-st.title("🏠 Home - Dictionary Text Classifier")
 
-# Default dictionaries
-DEFAULT_DICTIONARIES = {
-    'urgency_marketing': [
-        'limited', 'limited time', 'limited run', 'limited edition', 'order now', 
-        'last chance', 'hurry', 'while supplies last', 'before they\'re gone', 
-        'selling out', 'selling fast', 'act now', 'don\'t wait', 'today only', 
-        'expires soon', 'final hours', 'almost gone'
-    ],
-    'exclusive_marketing': [
-        'exclusive', 'exclusively', 'exclusive offer', 'exclusive deal', 
-        'members only', 'vip', 'special access', 'invitation only', 'premium', 
-        'privileged', 'limited access', 'select customers', 'insider', 
-        'private sale', 'early access'
-    ]
-}
-
-def classify_text(text: str, dictionaries: Dict[str, List[str]]) -> Tuple[str, Dict[str, int], List[str]]:
-    """Classify text based on dictionary matches."""
-    if pd.isna(text):
-        return 'unclassified', {}, []
-    
-    text_lower = text.lower()
-    category_scores = {}
-    all_matches = []
-    
-    # Count matches for each category
-    for category, terms in dictionaries.items():
-        matches = [term for term in terms if term.lower() in text_lower]
-        category_scores[category] = len(matches)
-        all_matches.extend(matches)
-    
-    # Determine primary classification
-    if not any(category_scores.values()):
-        primary_class = 'unclassified'
-    elif max(category_scores.values()) == 1 and sum(category_scores.values()) > 1:
-        primary_class = 'mixed_marketing'
-    else:
-        primary_class = max(category_scores, key=category_scores.get)
-    
-    return primary_class, category_scores, all_matches
-
-def process_classifications(df: pd.DataFrame, text_column: str, dictionaries: Dict[str, List[str]]) -> pd.DataFrame:
-    """Process DataFrame and add classification columns."""
-    result = df.copy()
-    
-    # Apply classification
-    classifications = result[text_column].apply(lambda x: classify_text(x, dictionaries))
-    
-    # Extract results
-    result['primary_classification'] = [c[0] for c in classifications]
-    result['all_matched_terms'] = [c[2] for c in classifications]
-    result['total_matches'] = [len(c[2]) for c in classifications]
-    
-    # Add individual category scores
-    for category in dictionaries.keys():
-        result[f'{category}_score'] = [c[1].get(category, 0) for c in classifications]
-    
-    return result
+# Custom CSS for better styling
+st.markdown("""
+<style>
+    .main-header {
+        text-align: center;
+        color: #1f77b4;
+        margin-bottom: 2rem;
+    }
+    .app-card {
+        background-color: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 10px;
+        border: 1px solid #e9ecef;
+        margin: 1rem 0;
+        transition: transform 0.2s;
+    }
+    .app-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .app-title {
+        color: #2c3e50;
+        font-size: 1.3rem;
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+    }
+    .app-description {
+        color: #6c757d;
+        margin-bottom: 1rem;
+    }
+    .nav-button {
+        background-color: #1f77b4;
+        color: white;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 5px;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 def main():
-    st.title("🔍 Dictionary Text Classifier")
-    st.markdown("Upload your dataset and customize dictionaries to classify text content.")
+    # Header
+    st.markdown('<h1 class="main-header">🧠 Text Analysis & Classification Suite</h1>', unsafe_allow_html=True)
     
-    # Sidebar for dictionary management
-    st.sidebar.header("📚 Dictionary Management")
+    # Introduction
+    st.markdown("""
+    <div style='text-align: center; margin-bottom: 3rem;'>
+        <p style='font-size: 1.1rem; color: #6c757d;'>
+            A comprehensive toolkit for text processing, classification, and analysis. Choose from the specialized applications below to process your text data.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    # Initialize session state for dictionaries
-    if 'dictionaries' not in st.session_state:
-        # Ensure all dictionary values are lists (convert sets if needed)
-        clean_dicts = {}
-        for key, value in DEFAULT_DICTIONARIES.items():
-            clean_dicts[key] = list(value) if not isinstance(value, list) else value
-        st.session_state.dictionaries = clean_dicts
+    # Application cards
+    col1, col2 = st.columns(2)
     
-    # Dictionary editor
-    st.sidebar.subheader("Edit Dictionaries")
+    # Define your applications here
+    apps = [
+        {
+            "title": "📝 Word Classifier",
+            "description": "Classify individual words into predefined categories using machine learning algorithms. Perfect for content categorization and word-level analysis.",
+            "file": "pages/1_Classifier_Word.py",
+            "icon": "📝"
+        },
+        {
+            "title": "📄 Text Classification",
+            "description": "Analyze and classify entire text documents or passages. Automatically categorize content based on topic, sentiment, or custom classification schemes.",
+            "file": "pages/1_Text_Classification.py",
+            "icon": "📄"
+        },
+        {
+            "title": "📚 Dictionary Refinement",
+            "description": "Refine and optimize your classification dictionaries. Add, remove, or modify terms to improve classification accuracy and coverage.",
+            "file": "pages/3_Dictionary_Refinement.py",
+            "icon": "📚"
+        },
+        {
+            "title": "🏗️ Dictionary Classifier Creation",
+            "description": "Build custom dictionary-based classifiers from scratch. Create rule-based classification systems using keyword dictionaries and pattern matching.",
+            "file": "pages/4_Dictionary_Classifier_Creation.py",
+            "icon": "🏗️"
+        },
+        {
+            "title": "🔗 Join Table App",
+            "description": "Merge and join multiple data tables based on common fields. Perform inner, outer, left, and right joins with an intuitive interface.",
+            "file": "pages/5_Join_Table_App.py",
+            "icon": "🔗"
+        },
+        {
+            "title": "✂️ Text Sentence Tokenizer",
+            "description": "Break down text into individual sentences with advanced tokenization. Handle complex punctuation, abbreviations, and multi-language text processing.",
+            "file": "pages/6_Text_Sentence_Tokenizer.py",
+            "icon": "✂️"
+        },
+        {
+            "title": "🎯 Rolling Context Window Processor",
+            "description": "Process text using sliding window techniques. Analyze text patterns and context within specified window sizes for advanced text analysis.",
+            "file": "pages/7_Rolling_Context_Window_Processor.py",
+            "icon": "🎯"
+        }
+    ]
     
-    # Add new category
-    with st.sidebar.expander("➕ Add New Category"):
-        new_category = st.text_input("Category Name", key="new_cat")
-        new_terms = st.text_area("Terms (one per line)", key="new_terms")
-        if st.button("Add Category"):
-            if new_category and new_terms:
-                terms_list = [term.strip() for term in new_terms.split('\n') if term.strip()]
-                st.session_state.dictionaries[new_category] = terms_list
-                st.success(f"Added category: {new_category}")
-                st.rerun()
-    
-    # Edit existing categories
-    for category in list(st.session_state.dictionaries.keys()):
-        with st.sidebar.expander(f"✏️ Edit {category}"):
-            # Ensure terms is a list for joining
-            current_terms = st.session_state.dictionaries[category]
-            terms_list = list(current_terms) if not isinstance(current_terms, list) else current_terms
-            terms_text = '\n'.join(terms_list)
-            edited_terms = st.text_area(f"Terms for {category}", value=terms_text, key=f"edit_{category}")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button(f"Update", key=f"update_{category}"):
-                    terms_list = [term.strip() for term in edited_terms.split('\n') if term.strip()]
-                    st.session_state.dictionaries[category] = terms_list
-                    st.success(f"Updated {category}")
-                    st.rerun()
-            
-            with col2:
-                if st.button(f"Delete", key=f"delete_{category}"):
-                    del st.session_state.dictionaries[category]
-                    st.success(f"Deleted {category}")
-                    st.rerun()
-    
-    # Reset to defaults
-    if st.sidebar.button("🔄 Reset to Defaults"):
-        # Ensure all values are lists when resetting
-        clean_dicts = {}
-        for key, value in DEFAULT_DICTIONARIES.items():
-            clean_dicts[key] = list(value) if not isinstance(value, list) else value
-        st.session_state.dictionaries = clean_dicts
-        st.rerun()
-    
-    # Main content area
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.header("📄 Data Upload")
-        uploaded_file = st.file_uploader("Upload CSV file", type=['csv'])
+    # Display apps in cards
+    for i, app in enumerate(apps):
+        col = col1 if i % 2 == 0 else col2
         
-        if uploaded_file is not None:
-            try:
-                df = pd.read_csv(uploaded_file)
-                st.success(f"Loaded {len(df)} rows")
+        with col:
+            with st.container():
+                st.markdown(f"""
+                <div class="app-card">
+                    <div class="app-title">{app['title']}</div>
+                    <div class="app-description">{app['description']}</div>
+                    <p><strong>File:</strong> {app['file']}</p>
+                </div>
+                """, unsafe_allow_html=True)
                 
-                # Column selection
-                text_columns = df.select_dtypes(include=['object']).columns.tolist()
-                selected_column = st.selectbox("Select text column to classify:", text_columns)
-                
-                if selected_column:
-                    # Show sample data
-                    st.subheader("Sample Data")
-                    st.dataframe(df.head(), use_container_width=True)
+                # Check if file exists
+                if os.path.exists(app['file']):
+                    if st.button(f"Open {app['title']}", key=f"btn_{i}"):
+                        st.switch_page(app['file'])
+                else:
+                    st.warning(f"⚠️ {app['file']} not found")
+    
+    # Sidebar with quick navigation
+    with st.sidebar:
+        st.markdown("### 🚀 Quick Navigation")
+        st.markdown("---")
+        
+        # Group apps by category
+        classification_apps = apps[:2]
+        dictionary_apps = apps[2:4] 
+        processing_apps = apps[4:]
+        
+        st.markdown("**📝 Classification Tools**")
+        for app in classification_apps:
+            if os.path.exists(app['file']):
+                if st.button(f"{app['icon']} {app['title'].split(' ', 1)[1]}", key=f"sidebar_{app['file']}", use_container_width=True):
+                    st.switch_page(app['file'])
+        
+        st.markdown("**📚 Dictionary Tools**")        
+        for app in dictionary_apps:
+            if os.path.exists(app['file']):
+                if st.button(f"{app['icon']} {app['title'].split(' ', 1)[1]}", key=f"sidebar_{app['file']}", use_container_width=True):
+                    st.switch_page(app['file'])
                     
-                    # Process button
-                    if st.button("🚀 Classify Text", type="primary"):
-                        with st.spinner("Processing classifications..."):
-                            classified_df = process_classifications(df, selected_column, st.session_state.dictionaries)
-                        
-                        # Results
-                        st.header("📊 Classification Results")
-                        
-                        # Summary metrics
-                        col_a, col_b, col_c, col_d = st.columns(4)
-                        
-                        class_counts = classified_df['primary_classification'].value_counts()
-                        total_classified = len(classified_df) - class_counts.get('unclassified', 0)
-                        
-                        with col_a:
-                            st.metric("Total Texts", len(classified_df))
-                        with col_b:
-                            st.metric("Classified", total_classified)
-                        with col_c:
-                            st.metric("Unclassified", class_counts.get('unclassified', 0))
-                        with col_d:
-                            st.metric("Categories", len(st.session_state.dictionaries))
-                        
-                        # Classification distribution
-                        st.subheader("Classification Distribution")
-                        st.bar_chart(class_counts)
-                        
-                        # Detailed results table
-                        st.subheader("Detailed Results")
-                        
-                        # Filter options
-                        filter_class = st.selectbox(
-                            "Filter by classification:",
-                            ['All'] + list(class_counts.index)
-                        )
-                        
-                        if filter_class != 'All':
-                            display_df = classified_df[classified_df['primary_classification'] == filter_class]
-                        else:
-                            display_df = classified_df
-                        
-                        # Display columns
-                        display_cols = [selected_column, 'primary_classification', 'total_matches', 'all_matched_terms']
-                        st.dataframe(display_df[display_cols], use_container_width=True)
-                        
-                        # Download processed data
-                        csv_buffer = StringIO()
-                        classified_df.to_csv(csv_buffer, index=False)
-                        
-                        st.download_button(
-                            label="📥 Download Results (CSV)",
-                            data=csv_buffer.getvalue(),
-                            file_name="classified_results.csv",
-                            mime="text/csv"
-                        )
-                        
-            except Exception as e:
-                st.error(f"Error processing file: {str(e)}")
+        st.markdown("**🔧 Processing Tools**")
+        for app in processing_apps:
+            if os.path.exists(app['file']):
+                if st.button(f"{app['icon']} {app['title'].split(' ', 1)[1]}", key=f"sidebar_{app['file']}", use_container_width=True):
+                    st.switch_page(app['file'])
+        
+        st.markdown("---")
+        st.markdown("### 📖 About")
+        st.info("This is your central hub for text analysis and classification tools. Each app specializes in different aspects of natural language processing.")
+        
+        st.markdown("### 🆘 Help")
+        with st.expander("How to use"):
+            st.write("""
+            - **Word/Text Classification**: Use these for categorizing content
+            - **Dictionary Tools**: Build and refine classification dictionaries  
+            - **Text Processing**: Tokenize and analyze text structure
+            - **Data Tools**: Join and merge your datasets
+            - Click on any application card to get started
+            """)
+
+# Alternative approach using multipage structure
+def create_multipage_nav():
+    """
+    Alternative navigation using st.navigation for newer Streamlit versions
+    """
+    # Define pages
+    pages = {
+        "Home": [
+            st.Page("home.py", title="🏠 Home", icon="🏠"),
+        ],
+        "Analytics": [
+            st.Page("dashboard.py", title="📊 Dashboard", icon="📊"),
+            st.Page("explorer.py", title="🔍 Data Explorer", icon="🔍"),
+            st.Page("sales_analytics.py", title="📈 Sales Analytics", icon="📈"),
+        ],
+        "Tools": [
+            st.Page("ml_predictor.py", title="🤖 ML Predictor", icon="🤖"),
+            st.Page("report_generator.py", title="📋 Report Generator", icon="📋"),
+            st.Page("settings.py", title="⚙️ Settings", icon="⚙️"),
+        ]
+    }
     
-    with col2:
-        st.header("📋 Current Dictionaries")
-        
-        for category, terms in st.session_state.dictionaries.items():
-            # Ensure terms is a list
-            terms_list = list(terms) if not isinstance(terms, list) else terms
-            with st.expander(f"{category} ({len(terms_list)} terms)"):
-                for term in terms_list[:10]:  # Show first 10 terms
-                    st.text(f"• {term}")
-                if len(terms_list) > 10:
-                    st.text(f"... and {len(terms_list) - 10} more")
-        
-        # Export/Import dictionaries
-        st.subheader("💾 Dictionary I/O")
-        
-        # Export
-        # Ensure all dictionary values are JSON serializable (lists, not sets)
-        serializable_dicts = {}
-        for key, value in st.session_state.dictionaries.items():
-            serializable_dicts[key] = list(value) if not isinstance(value, list) else value
-        
-        dict_json = json.dumps(serializable_dicts, indent=2)
-        st.download_button(
-            label="Export Dictionaries (JSON)",
-            data=dict_json,
-            file_name="dictionaries.json",
-            mime="application/json"
-        )
-        
-        # Import
-        uploaded_dict = st.file_uploader("Import Dictionaries (JSON)", type=['json'])
-        if uploaded_dict is not None:
-            try:
-                imported_dict = json.load(uploaded_dict)
-                if st.button("Load Imported Dictionaries"):
-                    # Ensure imported dictionary values are lists
-                    clean_imported = {}
-                    for key, value in imported_dict.items():
-                        clean_imported[key] = list(value) if not isinstance(value, list) else value
-                    st.session_state.dictionaries = clean_imported
-                    st.success("Dictionaries imported successfully!")
-                    st.rerun()
-            except Exception as e:
-                st.error(f"Error importing dictionaries: {str(e)}")
+    # Create navigation
+    pg = st.navigation(pages)
+    pg.run()
 
 if __name__ == "__main__":
+    # Use the main function for the card-based approach
     main()
+    
+    # Uncomment the line below and comment out main() above 
+    # if you prefer the newer navigation approach
+    # create_multipage_nav()
