@@ -525,7 +525,7 @@ def analysis_page():
     
     with col1:
         st.subheader("📏 Length Statistics")
-        if stats.get('length_stats') is not None and len(stats['length_stats']) > 0:
+        if stats.get('length_stats') and not stats['length_stats'].empty:
             length_df = pd.DataFrame({
                 'Statistic': stats['length_stats'].index,
                 'Value': stats['length_stats'].values
@@ -534,7 +534,7 @@ def analysis_page():
     
     with col2:
         st.subheader("📝 Word Count Statistics")
-        if stats.get('word_count_stats') is not None and len(stats['word_count_stats']) > 0:
+        if stats.get('word_count_stats') and not stats['word_count_stats'].empty:
             word_df = pd.DataFrame({
                 'Statistic': stats['word_count_stats'].index,
                 'Value': stats['word_count_stats'].values
@@ -698,7 +698,7 @@ def export_page():
                 "Length Statistics:",
             ]
             
-            if stats.get('length_stats') is not None and len(stats['length_stats']) > 0:
+            if stats.get('length_stats') and not stats['length_stats'].empty:
                 for key, value in stats['length_stats'].items():
                     summary_lines.append(f"  {key}: {value:.1f}")
             
@@ -707,7 +707,7 @@ def export_page():
                 "Word Count Statistics:",
             ])
             
-            if stats.get('word_count_stats') is not None and len(stats['word_count_stats']) > 0:
+            if stats.get('word_count_stats') and not stats['word_count_stats'].empty:
                 for key, value in stats['word_count_stats'].items():
                     summary_lines.append(f"  {key}: {value:.1f}")
             
