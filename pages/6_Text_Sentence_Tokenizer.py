@@ -525,21 +525,39 @@ def analysis_page():
     
     with col1:
         st.subheader("📏 Length Statistics")
-        if stats.get('length_stats') is not None and len(stats['length_stats']) > 0:
-            length_df = pd.DataFrame({
-                'Statistic': stats['length_stats'].index,
-                'Value': stats['length_stats'].values
-            })
-            st.dataframe(length_df, use_container_width=True)
+        try:
+            if 'length_stats' in stats and stats['length_stats'] is not None:
+                length_stats = stats['length_stats']
+                if hasattr(length_stats, 'index') and hasattr(length_stats, 'values'):
+                    length_df = pd.DataFrame({
+                        'Statistic': length_stats.index,
+                        'Value': length_stats.values
+                    })
+                    st.dataframe(length_df, use_container_width=True)
+                else:
+                    st.info("Length statistics not available")
+            else:
+                st.info("Length statistics not available")
+        except Exception as e:
+            st.info("Length statistics not available")
     
     with col2:
         st.subheader("📝 Word Count Statistics")
-        if stats.get('word_count_stats') is not None and len(stats['word_count_stats']) > 0:
-            word_df = pd.DataFrame({
-                'Statistic': stats['word_count_stats'].index,
-                'Value': stats['word_count_stats'].values
-            })
-            st.dataframe(word_df, use_container_width=True)
+        try:
+            if 'word_count_stats' in stats and stats['word_count_stats'] is not None:
+                word_count_stats = stats['word_count_stats']
+                if hasattr(word_count_stats, 'index') and hasattr(word_count_stats, 'values'):
+                    word_df = pd.DataFrame({
+                        'Statistic': word_count_stats.index,
+                        'Value': word_count_stats.values
+                    })
+                    st.dataframe(word_df, use_container_width=True)
+                else:
+                    st.info("Word count statistics not available")
+            else:
+                st.info("Word count statistics not available")
+        except Exception as e:
+            st.info("Word count statistics not available")
 
     # Visualizations using Streamlit charts
     st.subheader("📊 Data Visualizations")
@@ -698,18 +716,36 @@ def export_page():
                 "Length Statistics:",
             ]
             
-            if stats.get('length_stats') is not None and len(stats['length_stats']) > 0:
-                for key, value in stats['length_stats'].items():
-                    summary_lines.append(f"  {key}: {value:.1f}")
+            try:
+                if 'length_stats' in stats and stats['length_stats'] is not None:
+                    length_stats = stats['length_stats']
+                    if hasattr(length_stats, 'items'):
+                        for key, value in length_stats.items():
+                            summary_lines.append(f"  {key}: {value:.1f}")
+                    else:
+                        summary_lines.append("  Length statistics: Not available")
+                else:
+                    summary_lines.append("  Length statistics: Not available")
+            except:
+                summary_lines.append("  Length statistics: Not available")
             
             summary_lines.extend([
                 "",
                 "Word Count Statistics:",
             ])
             
-            if stats.get('word_count_stats') is not None and len(stats['word_count_stats']) > 0:
-                for key, value in stats['word_count_stats'].items():
-                    summary_lines.append(f"  {key}: {value:.1f}")
+            try:
+                if 'word_count_stats' in stats and stats['word_count_stats'] is not None:
+                    word_count_stats = stats['word_count_stats']
+                    if hasattr(word_count_stats, 'items'):
+                        for key, value in word_count_stats.items():
+                            summary_lines.append(f"  {key}: {value:.1f}")
+                    else:
+                        summary_lines.append("  Word count statistics: Not available")
+                else:
+                    summary_lines.append("  Word count statistics: Not available")
+            except:
+                summary_lines.append("  Word count statistics: Not available")
             
             summary_lines.extend([
                 "",
