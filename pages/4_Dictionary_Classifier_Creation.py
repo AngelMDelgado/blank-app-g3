@@ -1,23 +1,203 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import re
-import json
-from collections import Counter, defaultdict
-from sklearn.metrics import precision_score, recall_score, f1_score, classification_report, confusion_matrix
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import json
+from typing import Dict, List
+import io
 
-# Set page config
+# Import the classifier class (assuming it's in the same file or imported)
+class DictionaryClassifier:
+    """Dictionary-based text classifier for binary classification tasks."""
+    
+    def __init__(self):
+        self.data = None
+        self.text_column = None
+        self.label_column = None
+        self.dictionary = []
+        self.results = []
+        self.keyword_analysis = {}
+        self.tactic = ""
+        
+    def load_data(self, data: pd.DataFrame, text_column: str, label_column: str, tactic: str = ""):
+        """Load dataset for classification."""
+        self.data = data.copy()
+        self.text_column = text_column
+        self.label_column = label_column
+        self.tactic = tactic
+        
+        if text_column not in data.columns:
+            raise ValueError(f"Text column '{text_column}' not found in data")
+        if label_column not in data.columns:
+            raise ValueError(f"Label column '{label_column}' not found in data")
+            
+        self.data[label_column] = self.data[label_column].astype(int)
+        
+    def set_dictionary(self, keywords: List[str]):
+        """Set the keyword dictionary for classification."""
+        self.dictionary = [keyword.lower().strip() for keyword in keywords if keyword.strip()]
+        
+    def generate_default_dictionary(self, tactic_type: str = "promotional") -> List[str]:
+        """Generate a default dictionary based on tactic type."""
+        default_dictionaries = {
+            "promotional": [
+                "discount", "sale", "offer", "special", "limited", "free", 
+                "save", "deal", "promotion", "exclusive", "off", "reduced"
+            ],
+            "urgent": [
+                "urgent", "hurry", "deadline", "limited", "expires", "last", 
+                "final", "ending", "quick", "fast", "now", "today"
+            ],
+            "social_proof": [
+                "review", "testimonial", "customer", "rating", "recommend", 
+                "satisfied", "happy", "feedback", "trusted", "proven"
+            ],
+            "gratitude": [
+                "thank", "thanks", "grateful", "appreciate", "blessed", 
+                "honor", "privilege", "gratitude", "thankful"
+            ],
+            "local_business": [
+                "local", "community", "neighborhood", "hometown", "area", 
+                "nearby", "regional", "city", "town", "location"
+            ]
+        }
+        return default_dictionaries.get(tactic_type.lower(), default_dictionaries["promotional"])
+    
+    def classify_texts(self) -> Dict:
+        """Classify texts using the current dictionary."""
+        if self.data is None or not self.dictionary:
+            raise ValueError("Data and dictionary must be set before classification")
+            
+        results = []
+        
+        for idx, row in self.data.iterrows():
+            text = str(row[self.text_column]).lower()
+            ground_truth = int(row[self.label_column])
+            
+            matched_keywords = [kw for kw in self.dictionary if kw in text]
+            prediction = 1 if matched_keywords else 0
+            
+            if prediction == 1 and ground_truth == 1:
+                classification_type = "TP"
+            elif prediction == 1 and ground_truth == 0:
+                classification_type = "FP"
+            elif prediction == 0 and ground_truth == 1:
+                classification_type = "FN"
+            else:
+                classification_type = "TN"
+                
+            results.append({
+                'id': idx,
+                'text': row[self.text_column],
+                'prediction': prediction,
+                'ground_truth': ground_truth,
+                'matched_keywords': matched_keywords,
+                'classification_type': classification_type,
+                'is_correct': prediction == ground_truth
+            })
+            
+        self.results = results
+        metrics = self._calculate_overall_metrics()
+        self.keyword_analysis = self._calculate_keyword_analysis()
+        
+        return {
+            'results': results,
+            'metrics': metrics,
+            'keyword_analysis': self.keyword_analysis
+        }
+    
+    def _calculate_overall_metrics(self) -> Dict:
+        """Calculate overall classification metrics."""
+        tp = sum(1 for r in self.results if r['classification_type'] == 'TP')
+        fp = sum(1 for r in self.results if r['classification_type'] == 'FP')
+        fn = sum(1 for r in self.results if r['classification_type'] == 'FN')
+        tn = sum(1 for r in self.results if r['classification_type'] == 'TN')
+        
+        total = len(self.results)
+        accuracy = (tp + tn) / total if total > 0 else 0
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+        
+        return {
+            'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1_score': f1,
+            'true_positives': tp,
+            'false_positives': fp,
+            'false_negatives': fn,
+            'true_negatives': tn,
+            'total_samples': total
+        }
+    
+    def _calculate_keyword_analysis(self) -> Dict:
+        """Calculate per-keyword performance metrics."""
+        keyword_stats = {}
+        
+        for keyword in self.dictionary:
+            keyword_results = [r for r in self.results if keyword in r['matched_keywords']]
+            
+            tp = sum(1 for r in keyword_results if r['classification_type'] == 'TP')
+            fp = sum(1 for r in keyword_results if r['classification_type'] == 'FP')
+            
+            fn_candidates = [r for r in self.results if r['classification_type'] == 'FN']
+            fn = sum(1 for r in fn_candidates if keyword in str(r['text']).lower())
+            
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+            f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+            
+            tp_examples = [r for r in keyword_results if r['classification_type'] == 'TP'][:3]
+            fp_examples = [r for r in keyword_results if r['classification_type'] == 'FP'][:3]
+            fn_examples = [r for r in fn_candidates if keyword in str(r['text']).lower()][:3]
+            
+            keyword_stats[keyword] = {
+                'keyword': keyword,
+                'true_positives': tp,
+                'false_positives': fp,
+                'false_negatives': fn,
+                'precision': precision,
+                'recall': recall,
+                'f1_score': f1,
+                'examples': {
+                    'true_positives': tp_examples,
+                    'false_positives': fp_examples,
+                    'false_negatives': fn_examples
+                }
+            }
+            
+        return keyword_stats
+    
+    def get_true_positives(self) -> List[Dict]:
+        """Get all true positive results."""
+        return [r for r in self.results if r['classification_type'] == 'TP']
+    
+    def get_top_keywords_by_metric(self, metric: str = 'f1_score', top_n: int = 10) -> List[Dict]:
+        """Get top keywords sorted by specified metric."""
+        if not self.keyword_analysis:
+            return []
+            
+        sorted_keywords = sorted(
+            self.keyword_analysis.values(), 
+            key=lambda x: x[metric], 
+            reverse=True
+        )
+        
+        return sorted_keywords[:top_n]
+
+
+# Streamlit App Configuration
 st.set_page_config(
-    page_title="Instagram Category Classifier",
+    page_title="📊 Instagram Category Classifier - Dictionary Bot",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
+# Custom CSS
 st.markdown("""
 <style>
     .main-header {
@@ -25,18 +205,6 @@ st.markdown("""
         color: #1f77b4;
         text-align: center;
         margin-bottom: 2rem;
-    }
-    .section-header {
-        font-size: 1.5rem;
-        color: #ff7f0e;
-        margin-top: 2rem;
-        margin-bottom: 1rem;
-    }
-    .metric-container {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
     }
     .metric-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -46,756 +214,651 @@ st.markdown("""
         text-align: center;
         margin: 0.5rem 0;
     }
+    .keyword-tag {
+        background-color: #e3f2fd;
+        color: #1976d2;
+        padding: 0.25rem 0.5rem;
+        border-radius: 1rem;
+        margin: 0.125rem;
+        display: inline-block;
+        font-size: 0.875rem;
+    }
+    .step-indicator {
+        background-color: #f5f5f5;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+        border-left: 4px solid #1976d2;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-class CategoryClassifier:
-    def __init__(self):
-        self.df = None
-        self.categories = {}
-        self.classification_results = None
-        self.keyword_frequency = {}
-        self.ground_truth_available = False
-        self.metrics = {}
-        
-    def load_data_from_uploads(self, posts_df, categories_dict=None, ground_truth_df=None):
-        """Load data from Streamlit uploads"""
-        try:
-            self.df = posts_df.copy()
-            
-            required_cols = ['ID', 'Statement']
-            missing_cols = [col for col in required_cols if col not in self.df.columns]
-            if missing_cols:
-                st.error(f"Missing required columns in posts data: {missing_cols}")
-                return False
-            
-            # Check for ground truth data
-            if ground_truth_df is not None:
-                if 'ID' in ground_truth_df.columns and 'True_Category' in ground_truth_df.columns:
-                    # Merge ground truth with posts data
-                    self.df = self.df.merge(ground_truth_df[['ID', 'True_Category']], on='ID', how='left')
-                    self.ground_truth_available = True
-                    st.success(f"✅ Ground truth data loaded for {len(ground_truth_df)} posts")
-                else:
-                    st.warning("⚠️ Ground truth file must have 'ID' and 'True_Category' columns")
-            
-            # Load categories
-            if categories_dict:
-                self.categories = categories_dict
-                st.success(f"✅ Loaded {len(self.categories)} categories")
-            else:
-                self.categories = self._get_default_categories()
-                st.info(f"📝 Using {len(self.categories)} default categories")
-                
-            return True
-            
-        except Exception as e:
-            st.error(f"❌ Error loading data: {str(e)}")
-            return False
-    
-    def _get_default_categories(self):
-        """Return default category definitions"""
-        return {
-            "Gratitude Reflection": [
-                "grateful", "thank", "thanks", "thankful", "blessed", "appreciate", 
-                "appreciation", "gratitude", "honored", "privilege", "blessing"
-            ],
-            "Discount Pricing": [
-                "discount", "sale", "off", "save", "savings", "deal", "offer", 
-                "special price", "reduced", "markdown", "clearance", "promo"
-            ],
-            "Personal Milestone": [
-                "milestone", "achievement", "accomplish", "goal", "journey", 
-                "progress", "celebration", "success", "proud", "growth"
-            ],
-            "Social Proof": [
-                "review", "testimonial", "customer", "client", "feedback", 
-                "rating", "recommendation", "satisfied", "happy customer"
-            ],
-            "Urgency Marketing": [
-                "limited", "hurry", "last chance", "ending soon", "don't miss", 
-                "act fast", "while supplies last", "deadline", "urgent"
-            ],
-            "Exclusive Marketing": [
-                "exclusive", "vip", "member", "special access", "invitation only", 
-                "premium", "select", "insider", "private"
-            ],
-            "Local Business": [
-                "local", "community", "neighborhood", "hometown", "area", 
-                "nearby", "regional", "city", "town"
-            ]
-        }
-    
-    def classify_posts(self):
-        """Classify posts into categories based on keywords"""
-        if self.df is None or not self.categories:
-            return None
-            
-        results = []
-        category_counts = defaultdict(int)
-        keyword_counts = defaultdict(int)
-        
-        for idx, row in self.df.iterrows():
-            if pd.isna(row['Statement']):
-                continue
-                
-            text = str(row['Statement']).lower()
-            words = re.findall(r'\b\w+\b', text)
-            
-            # Find matching categories
-            post_categories = []
-            found_keywords = []
-            
-            for category, keywords in self.categories.items():
-                category_matches = []
-                for keyword in keywords:
-                    if keyword.lower() in text:
-                        category_matches.append(keyword)
-                        found_keywords.append(keyword)
-                        keyword_counts[keyword] += 1
-                
-                if category_matches:
-                    post_categories.append({
-                        'category': category,
-                        'keywords': category_matches,
-                        'keyword_count': len(category_matches)
-                    })
-            
-            # Determine primary category (most keyword matches)
-            primary_category = "Uncategorized"
-            if post_categories:
-                primary_category = max(post_categories, key=lambda x: x['keyword_count'])['category']
-                category_counts[primary_category] += 1
-            else:
-                category_counts["Uncategorized"] += 1
-            
-            result = {
-                'ID': row['ID'],
-                'Statement': row['Statement'],
-                'Primary_Category': primary_category,
-                'All_Categories': [cat['category'] for cat in post_categories],
-                'Keywords_Found': found_keywords,
-                'Keyword_Count': len(found_keywords)
-            }
-            
-            # Add ground truth if available
-            if self.ground_truth_available and 'True_Category' in row:
-                result['True_Category'] = row['True_Category']
-            
-            results.append(result)
-        
-        self.classification_results = results
-        self.keyword_frequency = dict(keyword_counts)
-        
-        # Calculate metrics if ground truth is available
-        if self.ground_truth_available:
-            self._calculate_metrics()
-        
-        return {
-            'results': results,
-            'category_counts': dict(category_counts),
-            'keyword_frequency': dict(keyword_counts)
-        }
-    
-    def _calculate_metrics(self):
-        """Calculate precision, recall, F1 scores and other metrics"""
-        if not self.classification_results or not self.ground_truth_available:
-            return
-        
-        # Prepare data for metrics calculation
-        y_true = []
-        y_pred = []
-        
-        for result in self.classification_results:
-            if pd.notna(result.get('True_Category')):
-                y_true.append(result['True_Category'])
-                y_pred.append(result['Primary_Category'])
-        
-        if not y_true:
-            st.warning("No valid ground truth data found for metrics calculation")
-            return
-        
-        # Get all unique categories
-        all_categories = list(set(y_true + y_pred))
-        
-        # Calculate overall metrics
-        precision_macro = precision_score(y_true, y_pred, average='macro', zero_division=0)
-        recall_macro = recall_score(y_true, y_pred, average='macro', zero_division=0)
-        f1_macro = f1_score(y_true, y_pred, average='macro', zero_division=0)
-        
-        precision_micro = precision_score(y_true, y_pred, average='micro', zero_division=0)
-        recall_micro = recall_score(y_true, y_pred, average='micro', zero_division=0)
-        f1_micro = f1_score(y_true, y_pred, average='micro', zero_division=0)
-        
-        # Accuracy
-        accuracy = sum(1 for true, pred in zip(y_true, y_pred) if true == pred) / len(y_true)
-        
-        # Per-category metrics
-        classification_rep = classification_report(y_true, y_pred, output_dict=True, zero_division=0)
-        
-        # Confusion matrix
-        conf_matrix = confusion_matrix(y_true, y_pred, labels=all_categories)
-        
-        self.metrics = {
-            'overall': {
-                'accuracy': accuracy,
-                'precision_macro': precision_macro,
-                'recall_macro': recall_macro,
-                'f1_macro': f1_macro,
-                'precision_micro': precision_micro,
-                'recall_micro': recall_micro,
-                'f1_micro': f1_micro
-            },
-            'per_category': classification_rep,
-            'confusion_matrix': conf_matrix,
-            'categories': all_categories,
-            'y_true': y_true,
-            'y_pred': y_pred
-        }
-    
-    def get_metrics_summary_df(self):
-        """Get metrics summary as DataFrame"""
-        if not self.metrics:
-            return None
-        
-        per_cat = self.metrics['per_category']
-        
-        # Create per-category metrics DataFrame
-        rows = []
-        for category, metrics in per_cat.items():
-            if category not in ['accuracy', 'macro avg', 'weighted avg']:
-                rows.append({
-                    'Category': category,
-                    'Precision': f"{metrics.get('precision', 0):.3f}",
-                    'Recall': f"{metrics.get('recall', 0):.3f}",
-                    'F1-Score': f"{metrics.get('f1-score', 0):.3f}",
-                    'Support': int(metrics.get('support', 0))
-                })
-        
-        return pd.DataFrame(rows)
-    
-    def get_confusion_matrix_fig(self):
-        """Create confusion matrix visualization"""
-        if not self.metrics or 'confusion_matrix' not in self.metrics:
-            return None
-        
-        conf_matrix = self.metrics['confusion_matrix']
-        categories = self.metrics['categories']
-        
-        # Create heatmap
-        fig = px.imshow(
-            conf_matrix,
-            x=categories,
-            y=categories,
-            aspect="auto",
-            color_continuous_scale="Blues",
-            title="Confusion Matrix"
-        )
-        
-        # Add text annotations
-        for i in range(len(categories)):
-            for j in range(len(categories)):
-                fig.add_annotation(
-                    x=j, y=i,
-                    text=str(conf_matrix[i][j]),
-                    showarrow=False,
-                    font=dict(color="white" if conf_matrix[i][j] > conf_matrix.max()/2 else "black")
-                )
-        
-        fig.update_layout(
-            xaxis_title="Predicted Category",
-            yaxis_title="True Category",
-            height=500
-        )
-        
-        return fig
-    
-    def get_metrics_comparison_fig(self):
-        """Create metrics comparison visualization"""
-        if not self.metrics:
-            return None
-        
-        per_cat = self.metrics['per_category']
-        
-        categories = []
-        precision_vals = []
-        recall_vals = []
-        f1_vals = []
-        
-        for category, metrics in per_cat.items():
-            if category not in ['accuracy', 'macro avg', 'weighted avg']:
-                categories.append(category)
-                precision_vals.append(metrics.get('precision', 0))
-                recall_vals.append(metrics.get('recall', 0))
-                f1_vals.append(metrics.get('f1-score', 0))
-        
-        fig = go.Figure()
-        
-        fig.add_trace(go.Bar(name='Precision', x=categories, y=precision_vals))
-        fig.add_trace(go.Bar(name='Recall', x=categories, y=recall_vals))
-        fig.add_trace(go.Bar(name='F1-Score', x=categories, y=f1_vals))
-        
-        fig.update_layout(
-            barmode='group',
-            title='Per-Category Metrics Comparison',
-            xaxis_title='Category',
-            yaxis_title='Score',
-            height=500,
-            xaxis={'categoryorder': 'total descending'}
-        )
-        
-        return fig
-    
-    def get_category_analysis_df(self):
-        """Get category frequency analysis as DataFrame"""
-        if not self.classification_results:
-            return None
-            
-        category_counts = defaultdict(int)
-        for result in self.classification_results:
-            category_counts[result['Primary_Category']] += 1
-        
-        total_posts = len(self.classification_results)
-        
-        category_df = pd.DataFrame([
-            {
-                'Category': category,
-                'Posts': count,
-                'Percentage': f"{(count/total_posts)*100:.1f}%"
-            }
-            for category, count in sorted(category_counts.items(), 
-                                        key=lambda x: x[1], reverse=True)
-        ])
-        
-        return category_df
-    
-    def get_keyword_frequency_df(self):
-        """Get keyword frequency analysis as DataFrame"""
-        if not self.keyword_frequency:
-            return None
-            
-        keyword_df = pd.DataFrame([
-            {
-                'Keyword': keyword,
-                'Frequency': count
-            }
-            for keyword, count in sorted(self.keyword_frequency.items(), 
-                                       key=lambda x: x[1], reverse=True)
-        ])
-        
-        return keyword_df
-    
-    def get_detailed_results_df(self):
-        """Get detailed classification results as DataFrame"""
-        if not self.classification_results:
-            return None
-            
-        return pd.DataFrame(self.classification_results)
-
 # Initialize session state
 if 'classifier' not in st.session_state:
-    st.session_state.classifier = CategoryClassifier()
+    st.session_state.classifier = DictionaryClassifier()
 if 'data_loaded' not in st.session_state:
     st.session_state.data_loaded = False
-if 'analysis_done' not in st.session_state:
-    st.session_state.analysis_done = False
+if 'classification_done' not in st.session_state:
+    st.session_state.classification_done = False
 
-def data_upload_page():
-    st.markdown("<h2 class='section-header'>📁 Data Upload</h2>", unsafe_allow_html=True)
+# Create sample data function
+def create_sample_data():
+    """Create sample promotional content data for testing."""
+    sample_data = {
+        'id': range(1, 21),
+        'statement': [
+            "Get 50% off all items this weekend only!",
+            "Thank you for your feedback on our service",
+            "Limited time offer - buy one get one free!",
+            "We appreciate your continued support",
+            "Special discount for VIP members today",
+            "Our team is here to help with any questions",
+            "Flash sale ends at midnight - hurry!",
+            "Welcome to our community newsletter",
+            "Exclusive deal: Save 30% on premium products",
+            "Your satisfaction is our top priority",
+            "Last chance to get free shipping",
+            "We value your business and loyalty",
+            "Today only: Extra 20% off clearance items",
+            "Thank you for choosing our brand",
+            "Don't miss out on these incredible savings",
+            "We're committed to excellent customer service",
+            "Limited quantities available - act fast!",
+            "Your feedback helps us improve",
+            "Special promotion ends soon",
+            "We're here whenever you need us"
+        ],
+        'answer': [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0]
+    }
+    return pd.DataFrame(sample_data)
+
+# Helper functions for visualization
+def create_confusion_matrix_plot(metrics):
+    """Create confusion matrix visualization."""
+    matrix = [[metrics['true_positives'], metrics['false_negatives']],
+              [metrics['false_positives'], metrics['true_negatives']]]
     
-    st.markdown("""
-    Upload your Instagram data files to get started:
-    1. **Posts Data**: CSV with columns 'ID' and 'Statement'
-    2. **Ground Truth** (optional): CSV with columns 'ID' and 'True_Category' for metrics calculation
-    3. **Categories** (optional): JSON file or manual configuration
-    """)
+    fig = px.imshow(matrix, 
+                    text_auto=True,
+                    aspect="auto",
+                    color_continuous_scale="Blues",
+                    labels=dict(x="Predicted", y="Actual", color="Count"))
     
-    col1, col2, col3 = st.columns(3)
+    fig.update_xaxis(tickvals=[0, 1], ticktext=['Negative', 'Positive'])
+    fig.update_yaxis(tickvals=[0, 1], ticktext=['Positive', 'Negative'])
+    fig.update_layout(title="Confusion Matrix", height=400)
+    
+    return fig
+
+def create_keyword_performance_plot(keyword_analysis, metric='f1_score', top_n=10):
+    """Create keyword performance bar chart."""
+    if not keyword_analysis:
+        return None
+        
+    sorted_keywords = sorted(keyword_analysis.values(), 
+                           key=lambda x: x[metric], reverse=True)[:top_n]
+    
+    keywords = [kw['keyword'] for kw in sorted_keywords]
+    values = [kw[metric] for kw in sorted_keywords]
+    
+    fig = px.bar(x=values, y=keywords, orientation='h',
+                 title=f'Top {top_n} Keywords by {metric.replace("_", " ").title()}',
+                 labels={'x': metric.replace("_", " ").title(), 'y': 'Keywords'})
+    
+    fig.update_layout(height=400, showlegend=False)
+    return fig
+
+# Main App
+def main():
+    # Header
+    st.markdown("<h1 class='main-header'>📊 Instagram Category Classifier</h1>", unsafe_allow_html=True)
+    st.markdown("### Dictionary Classification Bot - AI-Powered Text Classification")
+    
+    # Sidebar
+    st.sidebar.title("🔧 Navigation")
+    
+    # Navigation options
+    page = st.sidebar.selectbox(
+        "Choose a section:",
+        ["🎯 Setup & Data", "📖 Dictionary Management", "🔍 Classification", "📊 Analysis & Results"]
+    )
+    
+    # Show current status in sidebar
+    if st.session_state.data_loaded:
+        st.sidebar.success("✅ Data Loaded")
+        if hasattr(st.session_state.classifier, 'data') and st.session_state.classifier.data is not None:
+            st.sidebar.write(f"📄 Rows: {len(st.session_state.classifier.data)}")
+    
+    if st.session_state.classifier.dictionary:
+        st.sidebar.success("✅ Dictionary Set")
+        st.sidebar.write(f"📚 Keywords: {len(st.session_state.classifier.dictionary)}")
+    
+    if st.session_state.classification_done:
+        st.sidebar.success("✅ Classification Complete")
+    
+    # Page content
+    if page == "🎯 Setup & Data":
+        setup_data_page()
+    elif page == "📖 Dictionary Management":
+        dictionary_management_page()
+    elif page == "🔍 Classification":
+        classification_page()
+    elif page == "📊 Analysis & Results":
+        analysis_results_page()
+
+def setup_data_page():
+    """Setup and data upload page."""
+    st.markdown("## 🎯 Step 1: Define Tactic & Load Data")
+    
+    # Tactic definition
+    st.markdown("### Define Classification Tactic")
+    tactic = st.text_input(
+        "What type of content are you trying to classify?",
+        value=st.session_state.classifier.tactic,
+        placeholder="e.g., promotional offers, urgent messaging, customer complaints",
+        help="This will guide the dictionary generation and analysis"
+    )
+    
+    if tactic:
+        st.session_state.classifier.tactic = tactic
+    
+    st.markdown("### Load Your Dataset")
+    
+    # Data upload options
+    col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("📄 Posts Data")
-        posts_file = st.file_uploader("Upload posts CSV", type=['csv'], key="posts")
-        
-        if posts_file:
-            try:
-                posts_df = pd.read_csv(posts_file)
-                st.success(f"✅ Loaded {len(posts_df)} posts")
-                st.dataframe(posts_df.head())
-                
-                required_cols = ['ID', 'Statement']
-                missing_cols = [col for col in required_cols if col not in posts_df.columns]
-                if missing_cols:
-                    st.error(f"❌ Missing required columns: {missing_cols}")
-                else:
-                    st.session_state.posts_df = posts_df
-                    
-            except Exception as e:
-                st.error(f"Error loading posts file: {str(e)}")
-    
-    with col2:
-        st.subheader("📊 Ground Truth (Optional)")
-        ground_truth_file = st.file_uploader("Upload ground truth CSV", type=['csv'], key="ground_truth")
-        
-        if ground_truth_file:
-            try:
-                ground_truth_df = pd.read_csv(ground_truth_file)
-                st.success(f"✅ Loaded ground truth for {len(ground_truth_df)} posts")
-                st.dataframe(ground_truth_df.head())
-                
-                required_cols = ['ID', 'True_Category']
-                missing_cols = [col for col in required_cols if col not in ground_truth_df.columns]
-                if missing_cols:
-                    st.error(f"❌ Missing required columns: {missing_cols}")
-                else:
-                    st.session_state.ground_truth_df = ground_truth_df
-                    unique_categories = ground_truth_df['True_Category'].unique()
-                    st.info(f"Found categories: {', '.join(unique_categories)}")
-                    
-            except Exception as e:
-                st.error(f"Error loading ground truth file: {str(e)}")
-    
-    with col3:
-        st.subheader("🏷️ Categories Configuration")
-        
-        category_option = st.radio(
-            "Choose category source:",
-            ["Use default categories", "Upload categories JSON", "Configure manually"]
+        st.markdown("**Upload CSV File**")
+        uploaded_file = st.file_uploader(
+            "Choose CSV file",
+            type=['csv'],
+            help="Upload a CSV file with text data and binary labels (0/1)"
         )
         
-        categories_dict = None
+        if uploaded_file is not None:
+            try:
+                data = pd.read_csv(uploaded_file)
+                st.success(f"✅ File uploaded: {len(data)} rows, {len(data.columns)} columns")
+                
+                # Show preview
+                st.markdown("**Data Preview:**")
+                st.dataframe(data.head(), use_container_width=True)
+                
+                # Column selection
+                st.markdown("**Select Columns:**")
+                text_columns = data.columns.tolist()
+                label_columns = data.columns.tolist()
+                
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    text_column = st.selectbox(
+                        "Text Column",
+                        options=text_columns,
+                        help="Column containing the text to classify"
+                    )
+                
+                with col_b:
+                    label_column = st.selectbox(
+                        "Label Column (0/1)",
+                        options=label_columns,
+                        help="Column containing ground truth labels (0=negative, 1=positive)"
+                    )
+                
+                # Validate and load data
+                if st.button("📊 Load Data", type="primary"):
+                    try:
+                        # Validate label column
+                        unique_labels = data[label_column].unique()
+                        if not all(label in [0, 1, '0', '1'] for label in unique_labels if pd.notna(label)):
+                            st.error("Label column must contain only 0 and 1 values")
+                        else:
+                            st.session_state.classifier.load_data(
+                                data=data,
+                                text_column=text_column,
+                                label_column=label_column,
+                                tactic=tactic
+                            )
+                            st.session_state.data_loaded = True
+                            st.success("🎉 Data loaded successfully!")
+                            
+                            # Show data statistics
+                            positive_count = sum(data[label_column].astype(int))
+                            negative_count = len(data) - positive_count
+                            
+                            col_stat1, col_stat2, col_stat3 = st.columns(3)
+                            with col_stat1:
+                                st.metric("Total Samples", len(data))
+                            with col_stat2:
+                                st.metric("Positive Cases", positive_count)
+                            with col_stat3:
+                                st.metric("Negative Cases", negative_count)
+                            
+                    except Exception as e:
+                        st.error(f"Error loading data: {str(e)}")
+                        
+            except Exception as e:
+                st.error(f"Error reading CSV file: {str(e)}")
+    
+    with col2:
+        st.markdown("**Use Sample Data**")
+        st.info("Try the app with promotional content examples")
         
-        if category_option == "Upload categories JSON":
-            categories_file = st.file_uploader("Upload categories JSON", type=['json'], key="categories")
-            if categories_file:
-                try:
-                    categories_dict = json.load(categories_file)
-                    st.success(f"✅ Loaded {len(categories_dict)} categories")
-                    for cat, keywords in categories_dict.items():
-                        st.write(f"**{cat}**: {len(keywords)} keywords")
-                except Exception as e:
-                    st.error(f"Error loading categories file: {str(e)}")
-                    
-        elif category_option == "Configure manually":
-            st.write("Add custom categories:")
-            
-            if 'custom_categories' not in st.session_state:
-                st.session_state.custom_categories = {}
-            
-            new_category = st.text_input("Category name:")
-            new_keywords = st.text_area("Keywords (comma-separated):", 
-                                      placeholder="keyword1, keyword2, keyword3")
-            
-            if st.button("Add Category"):
-                if new_category and new_keywords:
-                    keywords_list = [kw.strip() for kw in new_keywords.split(',') if kw.strip()]
-                    st.session_state.custom_categories[new_category] = keywords_list
-                    st.success(f"Added category: {new_category}")
-            
-            if st.session_state.custom_categories:
-                st.write("**Current Categories:**")
-                for cat, keywords in st.session_state.custom_categories.items():
-                    st.write(f"• **{cat}**: {', '.join(keywords)}")
-                categories_dict = st.session_state.custom_categories
-    
-    # Load data button
-    if st.button("🚀 Load Data", type="primary"):
-        if 'posts_df' in st.session_state:
-            ground_truth_df = st.session_state.get('ground_truth_df', None)
-            success = st.session_state.classifier.load_data_from_uploads(
-                st.session_state.posts_df,
-                categories_dict,
-                ground_truth_df
+        if st.button("📝 Load Sample Data"):
+            sample_data = create_sample_data()
+            st.session_state.classifier.load_data(
+                data=sample_data,
+                text_column='statement',
+                label_column='answer',
+                tactic="promotional offers and special deals"
             )
-            if success:
-                st.session_state.data_loaded = True
-                st.success("🎉 Data loaded successfully! Go to Category Analysis.")
-        else:
-            st.error("❌ Please upload posts data file.")
+            st.session_state.data_loaded = True
+            st.success("✅ Sample data loaded!")
+            
+            # Show sample data preview
+            st.markdown("**Sample Data Preview:**")
+            st.dataframe(sample_data.head(), use_container_width=True)
+            
+            col_stat1, col_stat2, col_stat3 = st.columns(3)
+            with col_stat1:
+                st.metric("Total Samples", len(sample_data))
+            with col_stat2:
+                st.metric("Positive Cases", sum(sample_data['answer']))
+            with col_stat3:
+                st.metric("Negative Cases", len(sample_data) - sum(sample_data['answer']))
 
-def metrics_page():
-    st.markdown("<h2 class='section-header'>📊 Performance Metrics</h2>", unsafe_allow_html=True)
+def dictionary_management_page():
+    """Dictionary management page."""
+    st.markdown("## 📖 Step 2: Dictionary Management")
     
-    if not st.session_state.analysis_done:
-        st.warning("⚠️ Please run category analysis first.")
+    if not st.session_state.data_loaded:
+        st.warning("⚠️ Please load data first in the Setup & Data section.")
         return
     
-    if not st.session_state.classifier.ground_truth_available:
-        st.warning("⚠️ Ground truth data is required for metrics calculation. Please upload ground truth data in the Data Upload section.")
+    # Dictionary options
+    st.markdown("### Choose Dictionary Source")
+    
+    dict_option = st.radio(
+        "How would you like to create your dictionary?",
+        ["Use Default Template", "Upload Custom Dictionary", "Manual Entry"]
+    )
+    
+    if dict_option == "Use Default Template":
+        st.markdown("#### Select Template Type")
+        
+        template_type = st.selectbox(
+            "Choose a template based on your classification tactic:",
+            ["promotional", "urgent", "social_proof", "gratitude", "local_business"],
+            help="Templates contain pre-defined keywords for common classification tasks"
+        )
+        
+        # Show template keywords
+        template_keywords = st.session_state.classifier.generate_default_dictionary(template_type)
+        
+        st.markdown("**Template Keywords:**")
+        keywords_display = " • ".join([f'`{kw}`' for kw in template_keywords])
+        st.markdown(keywords_display)
+        
+        # Option to modify template
+        st.markdown("#### Customize Template")
+        custom_keywords = st.text_area(
+            "Add or remove keywords (comma-separated):",
+            value=", ".join(template_keywords),
+            height=100,
+            help="Edit the keywords as needed for your specific use case"
+        )
+        
+        if st.button("📚 Set Dictionary"):
+            keywords = [kw.strip() for kw in custom_keywords.split(',') if kw.strip()]
+            st.session_state.classifier.set_dictionary(keywords)
+            st.success(f"✅ Dictionary set with {len(keywords)} keywords!")
+    
+    elif dict_option == "Upload Custom Dictionary":
+        st.markdown("#### Upload Dictionary File")
+        
+        # File format options
+        format_option = st.radio(
+            "File format:",
+            ["Text file (comma-separated)", "JSON file"]
+        )
+        
+        uploaded_dict = st.file_uploader(
+            "Choose dictionary file",
+            type=['txt', 'json'] if format_option == "JSON file" else ['txt', 'csv']
+        )
+        
+        if uploaded_dict is not None:
+            try:
+                if format_option == "JSON file":
+                    dict_data = json.load(uploaded_dict)
+                    if isinstance(dict_data, list):
+                        keywords = dict_data
+                    elif isinstance(dict_data, dict):
+                        keywords = list(dict_data.keys()) if dict_data else []
+                    else:
+                        st.error("JSON must contain a list of keywords or a dictionary")
+                        return
+                else:
+                    content = uploaded_dict.read().decode('utf-8')
+                    keywords = [kw.strip() for kw in content.replace('\n', ',').split(',') if kw.strip()]
+                
+                st.success(f"📁 Loaded {len(keywords)} keywords from file")
+                
+                # Show keywords
+                st.markdown("**Loaded Keywords:**")
+                keywords_display = " • ".join([f'`{kw}`' for kw in keywords[:20]])
+                if len(keywords) > 20:
+                    keywords_display += f" ... and {len(keywords) - 20} more"
+                st.markdown(keywords_display)
+                
+                if st.button("📚 Use These Keywords"):
+                    st.session_state.classifier.set_dictionary(keywords)
+                    st.success(f"✅ Dictionary set with {len(keywords)} keywords!")
+                    
+            except Exception as e:
+                st.error(f"Error reading dictionary file: {str(e)}")
+    
+    elif dict_option == "Manual Entry":
+        st.markdown("#### Enter Keywords Manually")
+        
+        manual_keywords = st.text_area(
+            "Enter keywords (comma-separated):",
+            placeholder="discount, sale, offer, special, limited, free",
+            height=150,
+            help="Enter keywords separated by commas. Each keyword will be used for text matching."
+        )
+        
+        if manual_keywords:
+            keywords = [kw.strip() for kw in manual_keywords.split(',') if kw.strip()]
+            
+            st.markdown(f"**Preview ({len(keywords)} keywords):**")
+            for i, kw in enumerate(keywords):
+                if i < 20:  # Show first 20
+                    st.markdown(f'<span class="keyword-tag">{kw}</span>', unsafe_allow_html=True)
+                elif i == 20:
+                    st.markdown(f"... and {len(keywords) - 20} more keywords")
+                    break
+            
+            if st.button("📚 Set Dictionary"):
+                st.session_state.classifier.set_dictionary(keywords)
+                st.success(f"✅ Dictionary set with {len(keywords)} keywords!")
+    
+    # Current dictionary status
+    if st.session_state.classifier.dictionary:
+        st.markdown("---")
+        st.markdown("### Current Dictionary Status")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Keywords Count", len(st.session_state.classifier.dictionary))
+        with col2:
+            st.metric("Ready for Classification", "✅" if st.session_state.classifier.dictionary else "❌")
+        
+        # Show current keywords
+        with st.expander("View Current Dictionary"):
+            current_keywords = " • ".join([f'`{kw}`' for kw in st.session_state.classifier.dictionary])
+            st.markdown(current_keywords)
+        
+        # Export dictionary option
+        dict_export = "\n".join(st.session_state.classifier.dictionary)
+        st.download_button(
+            "📥 Download Dictionary",
+            dict_export,
+            file_name="dictionary.txt",
+            mime="text/plain"
+        )
+
+def classification_page():
+    """Classification execution page."""
+    st.markdown("## 🔍 Step 3: Run Classification")
+    
+    if not st.session_state.data_loaded:
+        st.warning("⚠️ Please load data first in the Setup & Data section.")
         return
     
-    if not st.session_state.classifier.metrics:
-        st.error("❌ No metrics available. Please ensure ground truth data is properly formatted.")
+    if not st.session_state.classifier.dictionary:
+        st.warning("⚠️ Please set up a dictionary in the Dictionary Management section.")
         return
     
-    # Overall Metrics
-    st.markdown("<h3 class='section-header'>🎯 Overall Performance</h3>", unsafe_allow_html=True)
+    # Classification settings
+    st.markdown("### Classification Settings")
     
-    overall_metrics = st.session_state.classifier.metrics['overall']
+    col1, col2 = st.columns(2)
+    with col1:
+        st.info(f"**Data:** {len(st.session_state.classifier.data)} samples")
+        st.info(f"**Dictionary:** {len(st.session_state.classifier.dictionary)} keywords")
     
+    with col2:
+        st.info(f"**Tactic:** {st.session_state.classifier.tactic}")
+        st.info(f"**Text Column:** {st.session_state.classifier.text_column}")
+    
+    # Run classification
+    if st.button("🚀 Run Classification", type="primary", use_container_width=True):
+        with st.spinner("Running classification..."):
+            try:
+                results = st.session_state.classifier.classify_texts()
+                st.session_state.classification_done = True
+                st.success("✅ Classification completed!")
+                
+                # Show quick results
+                metrics = results['metrics']
+                
+                st.markdown("### Quick Results")
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("Accuracy", f"{metrics['accuracy']:.1%}")
+                with col2:
+                    st.metric("Precision", f"{metrics['precision']:.1%}")
+                with col3:
+                    st.metric("Recall", f"{metrics['recall']:.1%}")
+                with col4:
+                    st.metric("F1-Score", f"{metrics['f1_score']:.1%}")
+                
+                # True positives preview
+                true_positives = st.session_state.classifier.get_true_positives()
+                
+                if true_positives:
+                    st.markdown(f"### 🎯 True Positives Found ({len(true_positives)})")
+                    
+                    for i, tp in enumerate(true_positives[:5]):
+                        with st.expander(f"Example {i+1}: \"{tp['text'][:50]}...\""):
+                            st.write(f"**Full Text:** {tp['text']}")
+                            st.write(f"**Matched Keywords:** {', '.join(tp['matched_keywords'])}")
+                    
+                    if len(true_positives) > 5:
+                        st.info(f"Showing 5 of {len(true_positives)} true positives. See Analysis & Results for full details.")
+                
+            except Exception as e:
+                st.error(f"Classification failed: {str(e)}")
+
+def analysis_results_page():
+    """Analysis and results page."""
+    st.markdown("## 📊 Step 4: Analysis & Results")
+    
+    if not st.session_state.classification_done:
+        st.warning("⚠️ Please run classification first.")
+        return
+    
+    # Performance metrics
+    st.markdown("### 🎯 Overall Performance")
+    
+    results = st.session_state.classifier.classify_texts()
+    metrics = results['metrics']
+    
+    # Metrics cards
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.markdown(f"""
         <div class="metric-card">
             <h3>Accuracy</h3>
-            <h2>{overall_metrics['accuracy']:.3f}</h2>
+            <h2>{metrics['accuracy']:.1%}</h2>
         </div>
         """, unsafe_allow_html=True)
     
     with col2:
         st.markdown(f"""
         <div class="metric-card">
-            <h3>Macro F1</h3>
-            <h2>{overall_metrics['f1_macro']:.3f}</h2>
+            <h3>Precision</h3>
+            <h2>{metrics['precision']:.1%}</h2>
         </div>
         """, unsafe_allow_html=True)
     
     with col3:
         st.markdown(f"""
         <div class="metric-card">
-            <h3>Macro Precision</h3>
-            <h2>{overall_metrics['precision_macro']:.3f}</h2>
+            <h3>Recall</h3>
+            <h2>{metrics['recall']:.1%}</h2>
         </div>
         """, unsafe_allow_html=True)
     
     with col4:
         st.markdown(f"""
         <div class="metric-card">
-            <h3>Macro Recall</h3>
-            <h2>{overall_metrics['recall_macro']:.3f}</h2>
+            <h3>F1-Score</h3>
+            <h2>{metrics['f1_score']:.1%}</h2>
         </div>
         """, unsafe_allow_html=True)
     
-    # Micro vs Macro comparison
-    st.markdown("<h3 class='section-header'>📈 Micro vs Macro Metrics</h3>", unsafe_allow_html=True)
+    # Confusion matrix
+    st.markdown("### 📊 Confusion Matrix")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("**Macro Average** (treats all classes equally)")
-        st.write(f"• Precision: {overall_metrics['precision_macro']:.3f}")
-        st.write(f"• Recall: {overall_metrics['recall_macro']:.3f}")
-        st.write(f"• F1-Score: {overall_metrics['f1_macro']:.3f}")
-    
-    with col2:
-        st.markdown("**Micro Average** (weighted by class frequency)")
-        st.write(f"• Precision: {overall_metrics['precision_micro']:.3f}")
-        st.write(f"• Recall: {overall_metrics['recall_micro']:.3f}")
-        st.write(f"• F1-Score: {overall_metrics['f1_micro']:.3f}")
-    
-    # Per-category metrics
-    st.markdown("<h3 class='section-header'>🏷️ Per-Category Performance</h3>", unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Metrics Table")
-        metrics_df = st.session_state.classifier.get_metrics_summary_df()
-        if metrics_df is not None:
-            st.dataframe(metrics_df, use_container_width=True)
-            
-            # Download metrics
-            csv_data = metrics_df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Metrics CSV",
-                data=csv_data,
-                file_name="classification_metrics.csv",
-                mime="text/csv"
-            )
-    
-    with col2:
-        st.subheader("Metrics Visualization")
-        metrics_fig = st.session_state.classifier.get_metrics_comparison_fig()
-        if metrics_fig:
-            st.plotly_chart(metrics_fig, use_container_width=True)
-    
-    # Confusion Matrix
-    st.markdown("<h3 class='section-header'>🔄 Confusion Matrix</h3>", unsafe_allow_html=True)
-    
-    conf_matrix_fig = st.session_state.classifier.get_confusion_matrix_fig()
-    if conf_matrix_fig:
+        conf_matrix_fig = create_confusion_matrix_plot(metrics)
         st.plotly_chart(conf_matrix_fig, use_container_width=True)
     
-    # Error Analysis
-    st.markdown("<h3 class='section-header'>🔍 Error Analysis</h3>", unsafe_allow_html=True)
-    
-    detailed_df = st.session_state.classifier.get_detailed_results_df()
-    if detailed_df is not None and 'True_Category' in detailed_df.columns:
-        # Find misclassified examples
-        errors_df = detailed_df[detailed_df['Primary_Category'] != detailed_df['True_Category']]
+    with col2:
+        st.markdown("**Classification Breakdown:**")
+        st.write(f"• True Positives: {metrics['true_positives']}")
+        st.write(f"• False Positives: {metrics['false_positives']}")
+        st.write(f"• False Negatives: {metrics['false_negatives']}")
+        st.write(f"• True Negatives: {metrics['true_negatives']}")
         
-        st.write(f"**Total Misclassifications**: {len(errors_df)} out of {len(detailed_df)} ({len(errors_df)/len(detailed_df)*100:.1f}%)")
+        st.markdown("**Interpretation:**")
+        if metrics['precision'] > 0.8:
+            st.success("🎯 High precision - low false alarm rate")
+        elif metrics['precision'] > 0.6:
+            st.warning("⚠️ Moderate precision - some false alarms")
+        else:
+            st.error("❌ Low precision - many false alarms")
         
-        if len(errors_df) > 0:
-            # Show error breakdown
-            error_summary = errors_df.groupby(['True_Category', 'Primary_Category']).size().reset_index(name='Count')
-            error_summary = error_summary.sort_values('Count', ascending=False)
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader("Most Common Misclassifications")
-                st.dataframe(error_summary.head(10), use_container_width=True)
-            
-            with col2:
-                st.subheader("Sample Misclassified Posts")
-                sample_errors = errors_df.sample(min(5, len(errors_df)))
-                for idx, row in sample_errors.iterrows():
-                    st.write(f"**True**: {row['True_Category']} → **Predicted**: {row['Primary_Category']}")
-                    st.write(f"*Statement*: {row['Statement'][:100]}...")
-                    st.write("---")
-
-def category_analysis_page():
-    st.markdown("<h2 class='section-header'>🔍 Category Analysis</h2>", unsafe_allow_html=True)
+        if metrics['recall'] > 0.8:
+            st.success("📡 High recall - catching most positive cases")
+        elif metrics['recall'] > 0.6:
+            st.warning("⚠️ Moderate recall - missing some cases")
+        else:
+            st.error("❌ Low recall - missing many positive cases")
     
-    if not st.session_state.data_loaded:
-        st.warning("⚠️ Please load data first in the Data Upload section.")
-        return
+    # Keyword analysis
+    st.markdown("### 🔍 Keyword Performance Analysis")
+    
+    analysis_tab = st.selectbox(
+        "Select analysis metric:",
+        ["f1_score", "precision", "recall"],
+        format_func=lambda x: x.replace("_", " ").title()
+    )
     
     col1, col2 = st.columns(2)
     
     with col1:
-        info_text = f"""
-        **Current Data:**
-        - Posts: {len(st.session_state.classifier.df)}
-        - Categories: {len(st.session_state.classifier.categories)}
-        """
-        
-        if st.session_state.classifier.ground_truth_available:
-            info_text += "\n- Ground Truth: ✅ Available (metrics will be calculated)"
-        else:
-            info_text += "\n- Ground Truth: ❌ Not available"
-        
-        st.info(info_text)
+        keyword_fig = create_keyword_performance_plot(
+            st.session_state.classifier.keyword_analysis, 
+            analysis_tab, 
+            10
+        )
+        if keyword_fig:
+            st.plotly_chart(keyword_fig, use_container_width=True)
     
     with col2:
-        if st.button("🔍 Analyze Categories", type="primary"):
-            with st.spinner("Analyzing post categories..."):
-                results = st.session_state.classifier.classify_posts()
-                
-                if results:
-                    st.session_state.analysis_done = True
-                    st.success("✅ Analysis completed!")
-                    if st.session_state.classifier.ground_truth_available:
-                        st.success("📊 Performance metrics calculated! Check the Metrics tab.")
+        st.markdown(f"**Top Keywords by {analysis_tab.replace('_', ' ').title()}:**")
+        
+        top_keywords = st.session_state.classifier.get_top_keywords_by_metric(analysis_tab, 5)
+        
+        for i, kw in enumerate(top_keywords, 1):
+            metric_value = kw[analysis_tab]
+            color = "🟢" if metric_value > 0.7 else "🟡" if metric_value > 0.4 else "🔴"
+            
+            st.write(f"{color} **{i}. '{kw['keyword']}'**")
+            st.write(f"   {analysis_tab.replace('_', ' ').title()}: {metric_value:.1%}")
+            st.write(f"   TP: {kw['true_positives']}, FP: {kw['false_positives']}, FN: {kw['false_negatives']}")
+            st.write("")
     
-    if st.session_state.analysis_done:
-        st.markdown("<h3 class='section-header'>📊 Category Analysis</h3>", unsafe_allow_html=True)
+    # Detailed results
+    st.markdown("### 📝 Detailed Results")
+    
+    tab1, tab2, tab3 = st.tabs(["True Positives", "False Positives", "False Negatives"])
+    
+    with tab1:
+        true_positives = [r for r in results['results'] if r['classification_type'] == 'TP']
+        st.write(f"Found {len(true_positives)} true positives")
         
-        col1, col2 = st.columns(2)
+        for i, tp in enumerate(true_positives):
+            with st.expander(f"TP {i+1}: \"{tp['text'][:60]}...\""):
+                st.write(f"**Text:** {tp['text']}")
+                st.write(f"**Keywords:** {', '.join(tp['matched_keywords'])}")
+    
+    with tab2:
+        false_positives = [r for r in results['results'] if r['classification_type'] == 'FP']
+        st.write(f"Found {len(false_positives)} false positives")
         
-        with col1:
-            st.subheader("Category Frequency:")
-            category_df = st.session_state.classifier.get_category_analysis_df()
-            if category_df is not None:
-                st.dataframe(category_df, use_container_width=True)
-                
-                # Download button for category analysis
-                csv_data = category_df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Category Analysis CSV",
-                    data=csv_data,
-                    file_name="category_analysis.csv",
-                    mime="text/csv"
-                )
+        for i, fp in enumerate(false_positives):
+            with st.expander(f"FP {i+1}: \"{fp['text'][:60]}...\""):
+                st.write(f"**Text:** {fp['text']}")
+                st.write(f"**Keywords:** {', '.join(fp['matched_keywords'])}")
+                st.write("*This was incorrectly classified as positive*")
+    
+    with tab3:
+        false_negatives = [r for r in results['results'] if r['classification_type'] == 'FN']
+        st.write(f"Found {len(false_negatives)} false negatives")
         
-        with col2:
-            st.subheader("Top Keywords Overall:")
-            keyword_df = st.session_state.classifier.get_keyword_frequency_df()
-            if keyword_df is not None:
-                st.dataframe(keyword_df.head(10), use_container_width=True)
-                
-                # Download button for keyword frequency
-                csv_data = keyword_df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Keyword Frequency CSV",
-                    data=csv_data,
-                    file_name="keyword_frequency.csv",
-                    mime="text/csv"
-                )
+        for i, fn in enumerate(false_negatives):
+            with st.expander(f"FN {i+1}: \"{fn['text'][:60]}...\""):
+                st.write(f"**Text:** {fn['text']}")
+                st.write("*This positive case was missed - no keywords matched*")
+    
+    # Export options
+    st.markdown("### 📥 Export Results")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Export classification results
+        results_df = pd.DataFrame(results['results'])
+        csv_results = results_df.to_csv(index=False)
         
-        # Detailed results
-        st.subheader("📝 Detailed Classification Results")
-        
-        detailed_df = st.session_state.classifier.get_detailed_results_df()
-        if detailed_df is not None:
-            # Filter options
-            col1, col2, col3 = st.columns(3)
+        st.download_button(
+            "📊 Download Classification Results",
+            csv_results,
+            file_name="classification_results.csv",
+            mime="text/csv"
+        )
+    
+    with col2:
+        # Export keyword analysis
+        if st.session_state.classifier.keyword_analysis:
+            keyword_df = pd.DataFrame([
+                {
+                    'keyword': kw['keyword'],
+                    'true_positives': kw['true_positives'],
+                    'false_positives': kw['false_positives'],
+                    'false_negatives': kw['false_negatives'],
+                    'precision': kw['precision'],
+                    'recall': kw['recall'],
+                    'f1_score': kw['f1_score']
+                }
+                for kw in st.session_state.classifier.keyword_analysis.values()
+            ])
             
-            with col1:
-                categories_list = list(st.session_state.classifier.categories.keys()) + ["Uncategorized"]
-                selected_category = st.selectbox(
-                    "Filter by category:",
-                    ["All"] + categories_list
-                )
+            csv_keywords = keyword_df.to_csv(index=False)
             
-            with col2:
-                min_keywords = st.slider("Min keywords found:", 0, 10, 0)
-            
-            with col3:
-                show_top = st.slider("Show top N posts:", 10, 100, 20)
-            
-            # Apply filters
-            filtered_df = detailed_df.copy()
-            if selected_category != "All":
-                filtered_df = filtered_df[filtered_df['Primary_Category'] == selected_category]
-            
-            filtered_df = filtered_df[filtered_df['Keyword_Count'] >= min_keywords]
-            filtered_df = filtered_df.head(show_top)
-            
-            # Display results
-            st.dataframe(filtered_df, use_container_width=True)
-            
-            # Download button for detailed results
-            csv_data = detailed_df.to_csv(index=False)
             st.download_button(
-                label="📥 Download Detailed Results CSV",
-                data=csv_data,
-                file_name="detailed_classification_results.csv",
+                "🔍 Download Keyword Analysis",
+                csv_keywords,
+                file_name="keyword_analysis.csv",
                 mime="text/csv"
             )
-
-def main():
-    st.markdown("<h1 class='main-header'>📊 Instagram Category Classifier</h1>", unsafe_allow_html=True)
-    st.markdown("### Analyze Instagram posts by categorizing them based on keyword patterns")
-    
-    # Sidebar navigation
-    st.sidebar.title("🔧 Navigation")
-    
-    page = st.sidebar.selectbox(
-        "Choose a section:",
-        ["📁 Data Upload", "🔍 Category Analysis", "📊 Performance Metrics"]
-    )
-    
-    # Show current categories in sidebar
-    if st.session_state.data_loaded:
-        st.sidebar.markdown("### 🏷️ Current Categories")
-        for category, keywords in st.session_state.classifier.categories.items():
-            with st.sidebar.expander(category):
-                st.write(", ".join(keywords))
-        
-        # Show data status
-        st.sidebar.markdown("### 📈 Data Status")
-        st.sidebar.write(f"Posts loaded: {len(st.session_state.classifier.df)}")
-        if st.session_state.classifier.ground_truth_available:
-            st.sidebar.write("Ground truth: ✅")
-        else:
-            st.sidebar.write("Ground truth: ❌")
-        
-        if st.session_state.analysis_done:
-            st.sidebar.write("Analysis: ✅ Complete")
-            if st.session_state.classifier.metrics:
-                accuracy = st.session_state.classifier.metrics['overall']['accuracy']
-                st.sidebar.write(f"Accuracy: {accuracy:.3f}")
-        else:
-            st.sidebar.write("Analysis: ⏳ Pending")
-    
-    if page == "📁 Data Upload":
-        data_upload_page()
-    elif page == "🔍 Category Analysis":
-        category_analysis_page()
-    elif page == "📊 Performance Metrics":
-        metrics_page()
 
 if __name__ == "__main__":
     main()
