@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 
 # Set page config
 st.set_page_config(
-    page_title="Instagram Dictionary Classifier",
+    page_title="Instagram Category Classifier",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -37,16 +37,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-class BasicClassifier:
+class CategoryClassifier:
     def __init__(self):
         self.df = None
-        self.engagement_df = None
-        self.keywords = []
-        self.feature_matrix = None
-        self.engagement_scores = {}
-        self.keyword_stats = {}
+        self.categories = {}
+        self.classification_results = None
+        self.keyword_frequency = {}
         
-    def load_data_from_uploads(self, posts_df, engagement_df=None, keywords_list=None):
+    def load_data_from_uploads(self, posts_df, categories_dict=None):
         """Load data from Streamlit uploads"""
         try:
             self.df = posts_df.copy()
@@ -56,26 +54,14 @@ class BasicClassifier:
             if missing_cols:
                 st.error(f"Missing required columns in posts data: {missing_cols}")
                 return False
-                
-            # Load engagement data
-            if engagement_df is not None:
-                self.engagement_df = engagement_df.copy()
-                
-                # Merge with posts data
-                self.df = pd.merge(self.df, self.engagement_df, 
-                                 left_on='ID', right_on='shortcode', how='inner')
-                st.success(f"✅ Merged data: {self.df.shape[0]} posts with engagement metrics")
+            
+            # Load categories
+            if categories_dict:
+                self.categories = categories_dict
+                st.success(f"✅ Loaded {len(self.categories)} categories")
             else:
-                st.warning("⚠️ No engagement data provided - running in analysis mode only")
-                return False
-                
-            # Load keywords
-            if keywords_list:
-                self.keywords = [kw.strip().lower() for kw in keywords_list if kw.strip()]
-                st.success(f"✅ Loaded {len(self.keywords)} keywords")
-            else:
-                self.keywords = self._get_default_keywords()
-                st.info(f"📝 Using {len(self.keywords)} default keywords")
+                self.categories = self._get_default_categories()
+                st.info(f"📝 Using {len(self.categories)} default categories")
                 
             return True
             
@@ -83,25 +69,47 @@ class BasicClassifier:
             st.error(f"❌ Error loading data: {str(e)}")
             return False
     
-    def _get_default_keywords(self):
-        """Return default keyword list"""
-        return [
-            "personalized", "custom", "tailored", "bespoke", "individual",
-            "human", "experience", "connection", "care", "thoughtful", 
-            "responsive", "concierge", "attentive", "dedicated", "unique",
-            "special", "exclusive", "premium", "luxury", "curated",
-            "handpicked", "artisan", "boutique", "intimate", "personal",
-            "authentic", "genuine", "original", "distinctive", "exceptional",
-            "remarkable", "outstanding", "extraordinary", "memorable", "unforgettable",
-            "amazing", "incredible", "fantastic", "wonderful", "beautiful",
-            "stunning", "gorgeous", "elegant", "sophisticated", "refined"
-        ]
+    def _get_default_categories(self):
+        """Return default category definitions"""
+        return {
+            "Gratitude Reflection": [
+                "grateful", "thank", "thanks", "thankful", "blessed", "appreciate", 
+                "appreciation", "gratitude", "honored", "privilege", "blessing"
+            ],
+            "Discount Pricing": [
+                "discount", "sale", "off", "save", "savings", "deal", "offer", 
+                "special price", "reduced", "markdown", "clearance", "promo"
+            ],
+            "Personal Milestone": [
+                "milestone", "achievement", "accomplish", "goal", "journey", 
+                "progress", "celebration", "success", "proud", "growth"
+            ],
+            "Social Proof": [
+                "review", "testimonial", "customer", "client", "feedback", 
+                "rating", "recommendation", "satisfied", "happy customer"
+            ],
+            "Urgency Marketing": [
+                "limited", "hurry", "last chance", "ending soon", "don't miss", 
+                "act fast", "while supplies last", "deadline", "urgent"
+            ],
+            "Exclusive Marketing": [
+                "exclusive", "vip", "member", "special access", "invitation only", 
+                "premium", "select", "insider", "private"
+            ],
+            "Local Business": [
+                "local", "community", "neighborhood", "hometown", "area", 
+                "nearby", "regional", "city", "town"
+            ]
+        }
     
-    def analyze_keywords(self, min_word_count=5):
-        """Analyze keyword usage and engagement correlation"""
-        keyword_engagement = {}
-        keyword_frequency = {}
-        post_features = []
+    def classify_posts(self):
+        """Classify posts into categories based on keywords"""
+        if self.df is None or not self.categories:
+            return None
+            
+        results = []
+        category_counts = defaultdict(int)
+        keyword_counts = defaultdict(int)
         
         for idx, row in self.df.iterrows():
             if pd.isna(row['Statement']):
@@ -110,115 +118,100 @@ class BasicClassifier:
             text = str(row['Statement']).lower()
             words = re.findall(r'\b\w+\b', text)
             
-            if len(words) < min_word_count:
-                continue
+            # Find matching categories
+            post_categories = []
+            found_keywords = []
+            
+            for category, keywords in self.categories.items():
+                category_matches = []
+                for keyword in keywords:
+                    if keyword.lower() in text:
+                        category_matches.append(keyword)
+                        found_keywords.append(keyword)
+                        keyword_counts[keyword] += 1
                 
-            # Count keywords in this post
-            post_keywords = []
-            for keyword in self.keywords:
-                if keyword in words:
-                    post_keywords.append(keyword)
-                    # Track frequency
-                    if keyword not in keyword_frequency:
-                        keyword_frequency[keyword] = 0
-                    keyword_frequency[keyword] += 1
-                    
-                    # Track engagement for this keyword
-                    if keyword not in keyword_engagement:
-                        keyword_engagement[keyword] = []
-                    
-                    if 'number_likes' in row and 'number_comments' in row:
-                        engagement = row['number_likes'] + row['number_comments']
-                        keyword_engagement[keyword].append(engagement)
+                if category_matches:
+                    post_categories.append({
+                        'category': category,
+                        'keywords': category_matches,
+                        'keyword_count': len(category_matches)
+                    })
             
-            # Create post features
-            post_feature = {
-                'post_id': row['ID'],
-                'statement': row['Statement'][:100] + "..." if len(row['Statement']) > 100 else row['Statement'],
-                'word_count': len(words),
-                'keyword_count': len(post_keywords),
-                'keywords_found': post_keywords,
-                'keyword_density': len(post_keywords) / len(words) if words else 0,
-                'has_exclamation': '!' in row['Statement'],
-                'has_question': '?' in row['Statement'],
-                'has_hashtag': '#' in row['Statement'],
-                'has_mention': '@' in row['Statement'],
-            }
+            # Determine primary category (most keyword matches)
+            primary_category = "Uncategorized"
+            if post_categories:
+                primary_category = max(post_categories, key=lambda x: x['keyword_count'])['category']
+                category_counts[primary_category] += 1
+            else:
+                category_counts["Uncategorized"] += 1
             
-            if 'number_likes' in row and 'number_comments' in row:
-                post_feature['likes'] = row['number_likes']
-                post_feature['comments'] = row['number_comments']
-                post_feature['total_engagement'] = row['number_likes'] + row['number_comments']
-            
-            post_features.append(post_feature)
+            results.append({
+                'ID': row['ID'],
+                'Statement': row['Statement'],
+                'Primary_Category': primary_category,
+                'All_Categories': [cat['category'] for cat in post_categories],
+                'Keywords_Found': found_keywords,
+                'Keyword_Count': len(found_keywords)
+            })
         
-        # Calculate average engagement per keyword
-        keyword_avg_engagement = {}
-        for keyword, engagements in keyword_engagement.items():
-            if engagements:
-                keyword_avg_engagement[keyword] = np.mean(engagements)
+        self.classification_results = results
+        self.keyword_frequency = dict(keyword_counts)
         
-        self.keyword_stats = {
-            'frequency': keyword_frequency,
-            'avg_engagement': keyword_avg_engagement,
-            'post_features': post_features
+        return {
+            'results': results,
+            'category_counts': dict(category_counts),
+            'keyword_frequency': dict(keyword_counts)
         }
-        
-        return self.keyword_stats
     
-    def get_engagement_percentiles(self):
-        """Calculate engagement percentiles"""
-        if 'number_likes' not in self.df.columns or 'number_comments' not in self.df.columns:
+    def get_category_analysis_df(self):
+        """Get category frequency analysis as DataFrame"""
+        if not self.classification_results:
             return None
             
-        engagements = self.df['number_likes'] + self.df['number_comments']
+        category_counts = defaultdict(int)
+        for result in self.classification_results:
+            category_counts[result['Primary_Category']] += 1
         
-        percentiles = {
-            '25th': np.percentile(engagements, 25),
-            '50th': np.percentile(engagements, 50),
-            '75th': np.percentile(engagements, 75),
-            '90th': np.percentile(engagements, 90),
-            '95th': np.percentile(engagements, 95)
-        }
+        total_posts = len(self.classification_results)
         
-        return percentiles
+        category_df = pd.DataFrame([
+            {
+                'Category': category,
+                'Posts': count,
+                'Percentage': f"{(count/total_posts)*100:.1f}%"
+            }
+            for category, count in sorted(category_counts.items(), 
+                                        key=lambda x: x[1], reverse=True)
+        ])
+        
+        return category_df
     
-    def predict_engagement_simple(self, text):
-        """Simple engagement prediction based on keyword analysis"""
-        if not self.keyword_stats:
-            return None, "No analysis available"
+    def get_keyword_frequency_df(self):
+        """Get keyword frequency analysis as DataFrame"""
+        if not self.keyword_frequency:
+            return None
             
-        words = re.findall(r'\b\w+\b', text.lower())
-        found_keywords = [kw for kw in self.keywords if kw in words]
+        keyword_df = pd.DataFrame([
+            {
+                'Keyword': keyword,
+                'Frequency': count
+            }
+            for keyword, count in sorted(self.keyword_frequency.items(), 
+                                       key=lambda x: x[1], reverse=True)
+        ])
         
-        if not found_keywords:
-            return "Low", "No target keywords found"
-        
-        # Calculate predicted engagement based on keyword averages
-        keyword_scores = []
-        for kw in found_keywords:
-            if kw in self.keyword_stats['avg_engagement']:
-                keyword_scores.append(self.keyword_stats['avg_engagement'][kw])
-        
-        if not keyword_scores:
-            return "Medium", "Keywords found but no historical data"
-        
-        avg_predicted_engagement = np.mean(keyword_scores)
-        percentiles = self.get_engagement_percentiles()
-        
-        if percentiles:
-            if avg_predicted_engagement >= percentiles['75th']:
-                return "High", f"Predicted engagement: {avg_predicted_engagement:.0f}"
-            elif avg_predicted_engagement >= percentiles['50th']:
-                return "Medium", f"Predicted engagement: {avg_predicted_engagement:.0f}"
-            else:
-                return "Low", f"Predicted engagement: {avg_predicted_engagement:.0f}"
-        
-        return "Medium", f"Predicted engagement: {avg_predicted_engagement:.0f}"
+        return keyword_df
+    
+    def get_detailed_results_df(self):
+        """Get detailed classification results as DataFrame"""
+        if not self.classification_results:
+            return None
+            
+        return pd.DataFrame(self.classification_results)
 
 # Initialize session state
 if 'classifier' not in st.session_state:
-    st.session_state.classifier = BasicClassifier()
+    st.session_state.classifier = CategoryClassifier()
 if 'data_loaded' not in st.session_state:
     st.session_state.data_loaded = False
 if 'analysis_done' not in st.session_state:
@@ -230,8 +223,7 @@ def data_upload_page():
     st.markdown("""
     Upload your Instagram data files to get started:
     1. **Posts Data**: CSV with columns 'ID' and 'Statement'
-    2. **Engagement Data**: CSV with columns 'shortcode', 'number_likes', 'number_comments'
-    3. **Keywords** (optional): Text file or manual input
+    2. **Categories** (optional): JSON file or manual configuration
     """)
     
     col1, col2 = st.columns(2)
@@ -257,71 +249,63 @@ def data_upload_page():
                 st.error(f"Error loading posts file: {str(e)}")
     
     with col2:
-        st.subheader("📈 Engagement Data")
-        engagement_file = st.file_uploader("Upload engagement CSV", type=['csv'], key="engagement")
+        st.subheader("🏷️ Categories Configuration")
         
-        if engagement_file:
-            try:
-                engagement_df = pd.read_csv(engagement_file)
-                st.success(f"✅ Loaded {len(engagement_df)} engagement records")
-                st.dataframe(engagement_df.head())
-                
-                required_cols = ['shortcode', 'number_likes', 'number_comments']
-                missing_cols = [col for col in required_cols if col not in engagement_df.columns]
-                if missing_cols:
-                    st.error(f"❌ Missing required columns: {missing_cols}")
-                else:
-                    st.session_state.engagement_df = engagement_df
-                    
-            except Exception as e:
-                st.error(f"Error loading engagement file: {str(e)}")
-    
-    # Keywords section
-    st.subheader("🔑 Keywords")
-    
-    keyword_option = st.radio(
-        "Choose keyword source:",
-        ["Use default keywords", "Upload keywords file", "Enter keywords manually"]
-    )
-    
-    keywords_list = None
-    
-    if keyword_option == "Upload keywords file":
-        keywords_file = st.file_uploader("Upload keywords file", type=['txt'], key="keywords")
-        if keywords_file:
-            try:
-                keywords_list = keywords_file.read().decode('utf-8').split('\n')
-                keywords_list = [kw.strip() for kw in keywords_list if kw.strip()]
-                st.success(f"✅ Loaded {len(keywords_list)} keywords")
-            except Exception as e:
-                st.error(f"Error loading keywords file: {str(e)}")
-                
-    elif keyword_option == "Enter keywords manually":
-        keywords_text = st.text_area(
-            "Enter keywords (one per line):",
-            height=200,
-            placeholder="personalized\ncustom\ntailored\nbespoke\n..."
+        category_option = st.radio(
+            "Choose category source:",
+            ["Use default categories", "Upload categories JSON", "Configure manually"]
         )
-        if keywords_text:
-            keywords_list = [kw.strip() for kw in keywords_text.split('\n') if kw.strip()]
-            st.info(f"📝 {len(keywords_list)} keywords entered")
+        
+        categories_dict = None
+        
+        if category_option == "Upload categories JSON":
+            categories_file = st.file_uploader("Upload categories JSON", type=['json'], key="categories")
+            if categories_file:
+                try:
+                    categories_dict = json.load(categories_file)
+                    st.success(f"✅ Loaded {len(categories_dict)} categories")
+                    for cat, keywords in categories_dict.items():
+                        st.write(f"**{cat}**: {len(keywords)} keywords")
+                except Exception as e:
+                    st.error(f"Error loading categories file: {str(e)}")
+                    
+        elif category_option == "Configure manually":
+            st.write("Add custom categories:")
+            
+            if 'custom_categories' not in st.session_state:
+                st.session_state.custom_categories = {}
+            
+            new_category = st.text_input("Category name:")
+            new_keywords = st.text_area("Keywords (comma-separated):", 
+                                      placeholder="keyword1, keyword2, keyword3")
+            
+            if st.button("Add Category"):
+                if new_category and new_keywords:
+                    keywords_list = [kw.strip() for kw in new_keywords.split(',') if kw.strip()]
+                    st.session_state.custom_categories[new_category] = keywords_list
+                    st.success(f"Added category: {new_category}")
+            
+            if st.session_state.custom_categories:
+                st.write("**Current Categories:**")
+                for cat, keywords in st.session_state.custom_categories.items():
+                    st.write(f"• **{cat}**: {', '.join(keywords)}")
+                categories_dict = st.session_state.custom_categories
     
     # Load data button
     if st.button("🚀 Load Data", type="primary"):
-        if 'posts_df' in st.session_state and 'engagement_df' in st.session_state:
+        if 'posts_df' in st.session_state:
             success = st.session_state.classifier.load_data_from_uploads(
                 st.session_state.posts_df,
-                st.session_state.engagement_df,
-                keywords_list
+                categories_dict
             )
             if success:
                 st.session_state.data_loaded = True
-                st.success("🎉 Data loaded successfully! Go to Keyword Analysis.")
+                st.success("🎉 Data loaded successfully! Go to Category Analysis.")
         else:
-            st.error("❌ Please upload both posts and engagement data files.")
+            st.error("❌ Please upload posts data file.")
 
-def keyword_analysis_page():
-    st.markdown("<h2 class='section-header'>🔍 Keyword Analysis</h2>", unsafe_allow_html=True)
+def category_analysis_page():
+    st.markdown("<h2 class='section-header'>🔍 Category Analysis</h2>", unsafe_allow_html=True)
     
     if not st.session_state.data_loaded:
         st.warning("⚠️ Please load data first in the Data Upload section.")
@@ -330,244 +314,119 @@ def keyword_analysis_page():
     col1, col2 = st.columns(2)
     
     with col1:
-        min_word_count = st.slider("Minimum word count per post", 1, 20, 5)
-    
-    with col2:
         st.info(f"""
         **Current Data:**
         - Posts: {len(st.session_state.classifier.df)}
-        - Keywords: {len(st.session_state.classifier.keywords)}
+        - Categories: {len(st.session_state.classifier.categories)}
         """)
     
-    if st.button("🔍 Analyze Keywords", type="primary"):
-        with st.spinner("Analyzing keyword performance..."):
-            stats = st.session_state.classifier.analyze_keywords(min_word_count)
-            
-            if stats:
-                st.session_state.analysis_done = True
-                st.success("✅ Analysis completed!")
+    with col2:
+        if st.button("🔍 Analyze Categories", type="primary"):
+            with st.spinner("Analyzing post categories..."):
+                results = st.session_state.classifier.classify_posts()
                 
-                # Keyword frequency analysis
-                st.subheader("📊 Keyword Frequency")
-                
-                if stats['frequency']:
-                    freq_df = pd.DataFrame(list(stats['frequency'].items()), 
-                                         columns=['Keyword', 'Frequency'])
-                    freq_df = freq_df.sort_values('Frequency', ascending=False)
-                    st.dataframe(freq_df.head(20))
-                
-                # Keyword engagement analysis
-                if stats['avg_engagement']:
-                    st.subheader("📈 Keyword Performance (Average Engagement)")
-                    
-                    eng_df = pd.DataFrame(list(stats['avg_engagement'].items()), 
-                                        columns=['Keyword', 'Avg_Engagement'])
-                    eng_df = eng_df.sort_values('Avg_Engagement', ascending=False)
-                    st.dataframe(eng_df.head(20))
-                    
-                    # Best performing keywords
-                    st.subheader("🏆 Top Performing Keywords")
-                    top_keywords = eng_df.head(10)
-                    
-                    for idx, row in top_keywords.iterrows():
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.write(f"**{row['Keyword']}**")
-                        with col2:
-                            st.metric("Avg Engagement", f"{row['Avg_Engagement']:.0f}")
-                
-                # Post analysis
-                st.subheader("📝 Post Analysis")
-                
-                posts_df = pd.DataFrame(stats['post_features'])
-                if not posts_df.empty:
-                    # Filter options
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        min_keywords = st.slider("Min keywords per post", 0, 10, 1)
-                    with col2:
-                        sort_by = st.selectbox("Sort by", 
-                                             ['total_engagement', 'keyword_count', 'keyword_density'])
-                    with col3:
-                        show_top = st.slider("Show top N posts", 5, 50, 20)
-                    
-                    # Filter and sort
-                    filtered_posts = posts_df[posts_df['keyword_count'] >= min_keywords]
-                    if sort_by in filtered_posts.columns:
-                        filtered_posts = filtered_posts.sort_values(sort_by, ascending=False)
-                    
-                    st.dataframe(filtered_posts.head(show_top))
-
-def prediction_page():
-    st.markdown("<h2 class='section-header'>🔮 Engagement Prediction</h2>", unsafe_allow_html=True)
+                if results:
+                    st.session_state.analysis_done = True
+                    st.success("✅ Analysis completed!")
     
-    if not st.session_state.analysis_done:
-        st.warning("⚠️ Please complete keyword analysis first.")
-        return
-    
-    st.subheader("📝 Test Your Instagram Post")
-    
-    sample_text = st.text_area(
-        "Enter Instagram post text:",
-        height=150,
-        placeholder="Enter your Instagram post text here to predict its engagement potential..."
-    )
-    
-    if sample_text and st.button("🔍 Predict Engagement", type="primary"):
-        prediction, details = st.session_state.classifier.predict_engagement_simple(sample_text)
-        
-        if prediction:
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                if prediction == "High":
-                    st.success(f"**Prediction: {prediction} Engagement** 🚀")
-                elif prediction == "Medium":
-                    st.info(f"**Prediction: {prediction} Engagement** 📊")
-                else:
-                    st.warning(f"**Prediction: {prediction} Engagement** 📉")
-            
-            with col2:
-                st.info(f"**Details:** {details}")
-            
-            # Text analysis
-            st.subheader("🔍 Text Analysis")
-            
-            text = sample_text.lower()
-            words = re.findall(r'\b\w+\b', text)
-            found_keywords = [kw for kw in st.session_state.classifier.keywords if kw in words]
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Word Count", len(words))
-            
-            with col2:
-                st.metric("Keywords Found", len(found_keywords))
-            
-            with col3:
-                density = len(found_keywords) / len(words) if words else 0
-                st.metric("Keyword Density", f"{density:.3f}")
-            
-            with col4:
-                features = sum([
-                    '!' in sample_text,
-                    '?' in sample_text,
-                    '#' in sample_text,
-                    '@' in sample_text
-                ])
-                st.metric("Special Features", features)
-            
-            if found_keywords:
-                st.subheader("✅ Keywords Found")
-                keyword_chips = " ".join([f"`{kw}`" for kw in found_keywords])
-                st.markdown(keyword_chips)
-                
-                # Show performance of found keywords
-                if st.session_state.classifier.keyword_stats['avg_engagement']:
-                    st.subheader("📊 Keyword Performance")
-                    perf_data = []
-                    for kw in found_keywords:
-                        if kw in st.session_state.classifier.keyword_stats['avg_engagement']:
-                            perf_data.append({
-                                'Keyword': kw,
-                                'Avg_Engagement': st.session_state.classifier.keyword_stats['avg_engagement'][kw],
-                                'Frequency': st.session_state.classifier.keyword_stats['frequency'].get(kw, 0)
-                            })
-                    
-                    if perf_data:
-                        perf_df = pd.DataFrame(perf_data)
-                        st.dataframe(perf_df)
-
-def insights_page():
-    st.markdown("<h2 class='section-header'>💡 Insights & Recommendations</h2>", unsafe_allow_html=True)
-    
-    if not st.session_state.analysis_done:
-        st.warning("⚠️ Please complete keyword analysis first.")
-        return
-    
-    stats = st.session_state.classifier.keyword_stats
-    
-    if stats['avg_engagement']:
-        st.subheader("🎯 Key Insights")
-        
-        # Top insights
-        eng_df = pd.DataFrame(list(stats['avg_engagement'].items()), 
-                            columns=['Keyword', 'Avg_Engagement'])
-        eng_df = eng_df.sort_values('Avg_Engagement', ascending=False)
-        
-        freq_df = pd.DataFrame(list(stats['frequency'].items()), 
-                             columns=['Keyword', 'Frequency'])
-        freq_df = freq_df.sort_values('Frequency', ascending=False)
+    if st.session_state.analysis_done:
+        st.markdown("<h3 class='section-header'>📊 Category Analysis</h3>", unsafe_allow_html=True)
         
         col1, col2 = st.columns(2)
         
         with col1:
-            st.success("**🏆 Highest Performing Keywords**")
-            top_performers = eng_df.head(5)
-            for _, row in top_performers.iterrows():
-                st.write(f"• **{row['Keyword']}**: {row['Avg_Engagement']:.0f} avg engagement")
+            st.subheader("Category Frequency:")
+            category_df = st.session_state.classifier.get_category_analysis_df()
+            if category_df is not None:
+                st.dataframe(category_df, use_container_width=True)
+                
+                # Download button for category analysis
+                csv_data = category_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Category Analysis CSV",
+                    data=csv_data,
+                    file_name="category_analysis.csv",
+                    mime="text/csv"
+                )
         
         with col2:
-            st.info("**📈 Most Frequently Used**")
-            most_used = freq_df.head(5)
-            for _, row in most_used.iterrows():
-                st.write(f"• **{row['Keyword']}**: Used {row['Frequency']} times")
+            st.subheader("Top Keywords Overall:")
+            keyword_df = st.session_state.classifier.get_keyword_frequency_df()
+            if keyword_df is not None:
+                st.dataframe(keyword_df.head(10), use_container_width=True)
+                
+                # Download button for keyword frequency
+                csv_data = keyword_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Keyword Frequency CSV",
+                    data=csv_data,
+                    file_name="keyword_frequency.csv",
+                    mime="text/csv"
+                )
         
-        # Recommendations
-        st.subheader("💡 Recommendations")
+        # Detailed results
+        st.subheader("📝 Detailed Classification Results")
         
-        # Find underused high-performers
-        merged_df = pd.merge(eng_df, freq_df, on='Keyword', how='inner')
-        merged_df['performance_ratio'] = merged_df['Avg_Engagement'] / merged_df['Frequency']
-        underused_gems = merged_df.nlargest(5, 'performance_ratio')
-        
-        st.success("**🔍 Underused High-Performers**")
-        st.write("These keywords have high engagement but are used infrequently:")
-        
-        for _, row in underused_gems.iterrows():
-            st.write(f"• **{row['Keyword']}**: {row['Avg_Engagement']:.0f} avg engagement, only used {row['Frequency']} times")
-        
-        # Engagement distribution
-        percentiles = st.session_state.classifier.get_engagement_percentiles()
-        if percentiles:
-            st.subheader("📊 Engagement Benchmarks")
-            
+        detailed_df = st.session_state.classifier.get_detailed_results_df()
+        if detailed_df is not None:
+            # Filter options
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                st.metric("50th Percentile", f"{percentiles['50th']:.0f}")
-                st.caption("Median engagement")
+                selected_category = st.selectbox(
+                    "Filter by category:",
+                    ["All"] + list(st.session_state.classifier.categories.keys()) + ["Uncategorized"]
+                )
             
             with col2:
-                st.metric("75th Percentile", f"{percentiles['75th']:.0f}")
-                st.caption("Good engagement")
+                min_keywords = st.slider("Min keywords found:", 0, 10, 0)
             
             with col3:
-                st.metric("90th Percentile", f"{percentiles['90th']:.0f}")
-                st.caption("Excellent engagement")
+                show_top = st.slider("Show top N posts:", 10, 100, 20)
+            
+            # Apply filters
+            filtered_df = detailed_df.copy()
+            if selected_category != "All":
+                filtered_df = filtered_df[filtered_df['Primary_Category'] == selected_category]
+            
+            filtered_df = filtered_df[filtered_df['Keyword_Count'] >= min_keywords]
+            filtered_df = filtered_df.head(show_top)
+            
+            # Display results
+            st.dataframe(filtered_df, use_container_width=True)
+            
+            # Download button for detailed results
+            csv_data = detailed_df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download Detailed Results CSV",
+                data=csv_data,
+                file_name="detailed_classification_results.csv",
+                mime="text/csv"
+            )
 
 def main():
-    st.markdown("<h1 class='main-header'>📊 Instagram Dictionary Classifier</h1>", unsafe_allow_html=True)
-    st.markdown("### Analyze Instagram engagement based on personalized language patterns")
+    st.markdown("<h1 class='main-header'>📊 Instagram Category Classifier</h1>", unsafe_allow_html=True)
+    st.markdown("### Analyze Instagram posts by categorizing them based on keyword patterns")
     
     # Sidebar navigation
     st.sidebar.title("🔧 Navigation")
     
     page = st.sidebar.selectbox(
         "Choose a section:",
-        ["📁 Data Upload", "🔍 Keyword Analysis", "🔮 Predictions", "💡 Insights"]
+        ["📁 Data Upload", "🔍 Category Analysis"]
     )
+    
+    # Show current categories in sidebar
+    if st.session_state.data_loaded:
+        st.sidebar.markdown("### 🏷️ Current Categories")
+        for category, keywords in st.session_state.classifier.categories.items():
+            with st.sidebar.expander(category):
+                st.write(", ".join(keywords))
     
     if page == "📁 Data Upload":
         data_upload_page()
-    elif page == "🔍 Keyword Analysis":
-        keyword_analysis_page()
-    elif page == "🔮 Predictions":
-        prediction_page()
-    elif page == "💡 Insights":
-        insights_page()
+    elif page == "🔍 Category Analysis":
+        category_analysis_page()
 
 if __name__ == "__main__":
     main()
